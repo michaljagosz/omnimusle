@@ -41,7 +41,7 @@ export default function SongOfTheDay() {
   const [results, setResults] = useState<Song[]>([]);
   const soundRef = useRef<Howl | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const requestRef = useRef<number>();
+  const requestRef = useRef<number | null>(null);
   const roundRef = useRef(round); 
 
   useEffect(() => { roundRef.current = round; }, [round]);

@@ -46,7 +46,7 @@ export default function FilmOfTheDay() {
   const [progress, setProgress] = useState(0);
   const soundRef = useRef<Howl | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const requestRef = useRef<number>();
+const requestRef = useRef<number | null>(null);
   const roundRef = useRef(round);
 
   // Search
