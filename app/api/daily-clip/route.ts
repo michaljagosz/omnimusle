@@ -36,7 +36,7 @@ const CLIP_PLAYLIST = [
 export async function GET() {
   const msPerDay = 24 * 60 * 60 * 1000;
   const currentDayIndex = Math.floor(Date.now() / msPerDay);
-  const puzzle = CLIP_PLAYLIST[currentDayIndex % CLIP_PLAYLIST.length];
+  const puzzle = CLIP_PLAYLIST[(currentDayIndex + 1) % CLIP_PLAYLIST.length];
 
   // Pobieramy metadane z TMDB lub Deezera?
   // W przypadku klipów najłatwiej po prostu zwrócić dane, które mamy ręcznie wpisane,

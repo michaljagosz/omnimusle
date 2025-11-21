@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 export default function Home() {
-  // Stan przechowujący status ukończenia dla KAŻDEJ gry osobno
   const [status, setStatus] = useState({
     song: false,
     artist: false,
@@ -15,18 +14,15 @@ export default function Home() {
   });
 
   useEffect(() => {
-    // Funkcja pomocnicza do sprawdzania LocalStorage
     const checkGameStatus = (key: string) => {
       const savedData = localStorage.getItem(key);
       if (savedData) {
         const parsed = JSON.parse(savedData);
-        // Gra jest "ukończona" jeśli wygraliśmy lub przegraliśmy (nie 'playing' i nie 'loading')
         return parsed.gameStatus === 'won' || parsed.gameStatus === 'lost';
       }
       return false;
     };
 
-    // Sprawdzamy wszystkie klucze, które stworzyliśmy w poprzednich krokach
     setStatus({
       song: checkGameStatus('musicGameProgress'),
       artist: checkGameStatus('artistGameProgress'),
@@ -37,183 +33,89 @@ export default function Home() {
     });
   }, []);
 
+  // Komponent pomocniczy do Karty
+  const GameCard = ({ href, title, subtitle, icon, colorClass, isPlayed }: any) => (
+    <Link href={href} className="group relative block">
+      <div className={`absolute inset-0 rounded-2xl blur opacity-20 transition-opacity group-hover:opacity-40 
+        ${isPlayed ? 'bg-green-500' : colorClass}`} 
+      />
+      <div className="relative bg-zinc-900 border border-zinc-800 p-5 rounded-2xl flex items-center justify-between hover:border-zinc-700 transition-colors">
+        <div className="flex items-center gap-4">
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl bg-zinc-800/50 
+            ${isPlayed ? 'text-green-400' : 'text-zinc-200'}`}>
+            {icon}
+          </div>
+          <div>
+            <h2 className={`text-lg font-bold transition-colors ${isPlayed ? 'text-green-400' : 'text-white group-hover:text-white'}`}>
+              {title}
+            </h2>
+            <p className="text-xs text-zinc-500 uppercase tracking-wider font-medium mt-0.5">
+              {isPlayed ? 'Completed' : subtitle}
+            </p>
+          </div>
+        </div>
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all
+           ${isPlayed ? 'bg-green-500 text-black' : 'bg-zinc-800 text-zinc-500 group-hover:bg-zinc-700 group-hover:text-white'}`}>
+           {isPlayed ? '✓' : '→'}
+        </div>
+      </div>
+    </Link>
+  );
+
   return (
-    <main className="min-h-screen bg-zinc-950 text-white p-6 font-sans selection:bg-green-500 selection:text-white">
+    <main className="min-h-screen bg-zinc-950 text-white p-6 font-sans selection:bg-green-500 selection:text-white pb-32">
       
-      {/* NAGŁÓWEK */}
-      <header className="max-w-2xl mx-auto pt-10 pb-12 text-center">
-        <h1 className="text-4xl md:text-6xl font-extrabold tracking-tighter mb-4 bg-gradient-to-r from-green-400 to-blue-500 bg-clip-text text-transparent">
-          OMNI<span className="text-white">MUSLE</span>
+      {/* NAGŁÓWEK Z PRZYWRÓCONYM GRADIENTEM */}
+      <header className="max-w-2xl mx-auto pt-8 pb-10 text-center">
+        <h1 className="text-5xl md:text-6xl font-black tracking-tighter mb-3 bg-gradient-to-r from-green-400 to-blue-500 bg-clip-text text-transparent">
+          MUSIC<span className="text-white">DLE</span>
         </h1>
-        <p className="text-zinc-400 text-lg">Codzienne wyzwania dla fanów muzyki</p>
+        <p className="text-zinc-400 font-medium text-lg">Daily music challenges</p>
       </header>
 
-      {/* GRID Z GRAMI */}
-      <div className="max-w-md mx-auto grid gap-4">
+      <div className="max-w-md mx-auto grid gap-3">
         
-        {/* KARTA 1: SONG */}
-        <Link href="/song" className="group relative block">
-          <div className={`absolute inset-0 rounded-2xl blur opacity-25 transition-opacity group-hover:opacity-50 
-            ${status.song ? 'bg-green-500' : 'bg-blue-600'}`} 
-          />
-          <div className="relative bg-zinc-900 border border-zinc-800 p-6 rounded-2xl flex items-center justify-between hover:border-zinc-600 transition-colors">
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl
-                ${status.song ? 'bg-green-900/50 text-green-400' : 'bg-blue-900/50 text-blue-400'}`}>
-                🎵
-              </div>
-              <div>
-                <h2 className="text-xl font-bold group-hover:text-blue-400 transition-colors">Song of the Day</h2>
-                <p className="text-xs text-zinc-500 uppercase tracking-wider mt-1">Odgadnij utwór</p>
-              </div>
-            </div>
-            {status.song ? (
-              <span className="text-green-500 font-bold text-sm bg-green-900/30 px-3 py-1 rounded-full">UKOŃCZONE</span>
-            ) : (
-              <span className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors">→</span>
-            )}
-          </div>
-        </Link>
+        <GameCard 
+          href="/song" title="Song of the Day" subtitle="Guess the intro" icon="🎵" 
+          colorClass="bg-blue-600" isPlayed={status.song} 
+        />
+        
+        <GameCard 
+          href="/artist" title="Artist of the Day" subtitle="Guess the face" icon="👨‍🎤" 
+          colorClass="bg-purple-600" isPlayed={status.artist} 
+        />
 
-        {/* KARTA 2: ARTIST */}
-        <Link href="/artist" className="group relative block">
-          <div className={`absolute inset-0 rounded-2xl blur opacity-25 transition-opacity group-hover:opacity-50 
-            ${status.artist ? 'bg-green-500' : 'bg-purple-600'}`} 
-          />
-          <div className="relative bg-zinc-900 border border-zinc-800 p-6 rounded-2xl flex items-center justify-between hover:border-zinc-600 transition-colors">
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl
-                ${status.artist ? 'bg-green-900/50 text-green-400' : 'bg-purple-900/50 text-purple-400'}`}>
-                👨‍🎤
-              </div>
-              <div>
-                <h2 className="text-xl font-bold group-hover:text-purple-400 transition-colors">Artist of the Day</h2>
-                <p className="text-xs text-zinc-500 uppercase tracking-wider mt-1">Odgadnij zdjęcie</p>
-              </div>
-            </div>
-            {status.artist ? (
-              <span className="text-green-500 font-bold text-sm bg-green-900/30 px-3 py-1 rounded-full">UKOŃCZONE</span>
-            ) : (
-              <span className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center group-hover:bg-purple-600 group-hover:text-white transition-colors">→</span>
-            )}
-          </div>
-        </Link>
+        <GameCard 
+          href="/album" title="Album of the Day" subtitle="Guess the cover" icon="💿" 
+          colorClass="bg-yellow-600" isPlayed={status.album} 
+        />
 
-        {/* KARTA 3: ALBUM */}
-        <Link href="/album" className="group relative block">
-          <div className={`absolute inset-0 rounded-2xl blur opacity-25 transition-opacity group-hover:opacity-50 
-            ${status.album ? 'bg-green-500' : 'bg-yellow-600'}`} 
-          />
-          <div className="relative bg-zinc-900 border border-zinc-800 p-6 rounded-2xl flex items-center justify-between hover:border-zinc-600 transition-colors">
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl
-                ${status.album ? 'bg-green-900/50 text-green-400' : 'bg-yellow-900/50 text-yellow-400'}`}>
-                💿
-              </div>
-              <div>
-                <h2 className="text-xl font-bold group-hover:text-yellow-400 transition-colors">Album of the Day</h2>
-                <p className="text-xs text-zinc-500 uppercase tracking-wider mt-1">Odgadnij okładkę</p>
-              </div>
-            </div>
-            {status.album ? (
-              <span className="text-green-500 font-bold text-sm bg-green-900/30 px-3 py-1 rounded-full">UKOŃCZONE</span>
-            ) : (
-              <span className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center group-hover:bg-yellow-600 group-hover:text-white transition-colors">→</span>
-            )}
-          </div>
-        </Link>
+        <GameCard 
+          href="/lyrics" title="Lyrics of the Day" subtitle="Guess the lines" icon="📝" 
+          colorClass="bg-cyan-600" isPlayed={status.lyrics} 
+        />
 
-        {/* KARTA 4: LYRICS */}
-        <Link href="/lyrics" className="group relative block">
-          <div className={`absolute inset-0 rounded-2xl blur opacity-25 transition-opacity group-hover:opacity-50 
-            ${status.lyrics ? 'bg-green-500' : 'bg-cyan-600'}`} 
-          />
-          <div className="relative bg-zinc-900 border border-zinc-800 p-6 rounded-2xl flex items-center justify-between hover:border-zinc-600 transition-colors">
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl
-                ${status.lyrics ? 'bg-green-900/50 text-green-400' : 'bg-cyan-900/50 text-cyan-400'}`}>
-                📝
-              </div>
-              <div>
-                <h2 className="text-xl font-bold group-hover:text-cyan-400 transition-colors">Lyrics of the Day</h2>
-                <p className="text-xs text-zinc-500 uppercase tracking-wider mt-1">Odgadnij słowa</p>
-              </div>
-            </div>
-            {status.lyrics ? (
-              <span className="text-green-500 font-bold text-sm bg-green-900/30 px-3 py-1 rounded-full">UKOŃCZONE</span>
-            ) : (
-              <span className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center group-hover:bg-cyan-600 group-hover:text-white transition-colors">→</span>
-            )}
-          </div>
-        </Link>
+        <GameCard 
+          href="/film" title="Film of the Day" subtitle="Guess the soundtrack" icon="🎬" 
+          colorClass="bg-red-600" isPlayed={status.film} 
+        />
 
-        {/* KARTA 5: FILM */}
-        <Link href="/film" className="group relative block">
-          <div className={`absolute inset-0 rounded-2xl blur opacity-25 transition-opacity group-hover:opacity-50 
-            ${status.film ? 'bg-green-500' : 'bg-red-600'}`} 
-          />
-          <div className="relative bg-zinc-900 border border-zinc-800 p-6 rounded-2xl flex items-center justify-between hover:border-zinc-600 transition-colors">
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl
-                ${status.film ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
-                🎬
-              </div>
-              <div>
-                <h2 className="text-xl font-bold group-hover:text-red-400 transition-colors">Film of the Day</h2>
-                <p className="text-xs text-zinc-500 uppercase tracking-wider mt-1">Odgadnij film lub serial</p>
-              </div>
-            </div>
-            {status.film ? (
-              <span className="text-green-500 font-bold text-sm bg-green-900/30 px-3 py-1 rounded-full">UKOŃCZONE</span>
-            ) : (
-              <span className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center group-hover:bg-red-600 group-hover:text-white transition-colors">→</span>
-            )}
-          </div>
-        </Link>
-
-        {/* KARTA 6: CLIP */}
-        <Link href="/clip" className="group relative block">
-          <div className={`absolute inset-0 rounded-2xl blur opacity-25 transition-opacity group-hover:opacity-50 
-            ${status.clip ? 'bg-green-500' : 'bg-indigo-600'}`} 
-          />
-          <div className="relative bg-zinc-900 border border-zinc-800 p-6 rounded-2xl flex items-center justify-between hover:border-zinc-600 transition-colors">
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl
-                ${status.clip ? 'bg-green-900/50 text-green-400' : 'bg-indigo-900/50 text-indigo-400'}`}>
-                📹
-              </div>
-              <div>
-                <h2 className="text-xl font-bold group-hover:text-indigo-400 transition-colors">Clip of the Day</h2>
-                <p className="text-xs text-zinc-500 uppercase tracking-wider mt-1">Odgadnij teledysk</p>
-              </div>
-            </div>
-            {status.clip ? (
-              <span className="text-green-500 font-bold text-sm bg-green-900/30 px-3 py-1 rounded-full">UKOŃCZONE</span>
-            ) : (
-              <span className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors">→</span>
-            )}
-          </div>
-        </Link>
+        <GameCard 
+          href="/clip" title="Clip of the Day" subtitle="Guess the video" icon="📹" 
+          colorClass="bg-indigo-600" isPlayed={status.clip} 
+        />
 
       </div>
 
-      {/* FOOTER */}
-      <footer className="mt-20 pb-32 text-center text-zinc-600 text-xs max-w-xs mx-auto space-y-4">
-        <p>&copy; 2025 Omnimusle.</p>
-        <div className="flex flex-col gap-2 items-center justify-center opacity-70">
-          <p>Powered by:</p>
-          <div className="flex gap-4 items-center">
+      <footer className="mt-16 text-center text-zinc-600 text-[10px] max-w-xs mx-auto space-y-4">
+        <p className="font-bold tracking-widest uppercase">&copy; 2025 Musicdle</p>
+        <div className="flex flex-col gap-2 items-center justify-center opacity-60">
+          <div className="flex gap-3 items-center grayscale hover:grayscale-0 transition-all">
             <span>Deezer API</span>
-            <span className="text-zinc-700">|</span>
-            <img 
-              src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" 
-              alt="TMDB Logo" 
-              className="h-3" 
-            />
+            <span className="text-zinc-800">|</span>
+            <img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" alt="TMDB" className="h-2.5" />
           </div>
-          <p className="text-[10px] mt-2 text-zinc-700">
-            This product uses the TMDB API but is not endorsed or certified by TMDB.
-          </p>
+          <p>Not endorsed or certified by TMDB or Deezer.</p>
         </div>
       </footer>
 
