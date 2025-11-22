@@ -50,7 +50,6 @@ export default function BottomNav() {
     { href: '/lyrics', label: 'Lyrics', icon: '📝' },
     { href: '/film', label: 'Film', icon: '🎬' },
     { href: '/clip', label: 'Clip', icon: '📹' },
-    { href: '/mashup', label: 'Mashup', icon: '🍸' },
   ];
 
   return (

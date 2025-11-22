@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 // Lista zagadek: ID utworu w Deezerze + Fragmenty tekstu
 const LYRICS_PLAYLIST = [
   {
-    id: 3135556, // Queen - Bohemian Rhapsody
+    id: 561836, // Queen - Bohemian Rhapsody
     lines: [
       "Is this the real life?",
       "Is this just fantasy?",
@@ -25,7 +25,7 @@ const LYRICS_PLAYLIST = [
     ]
   },
   {
-    id: 3135556, // Przykładowy: Survivor - Eye of the Tiger (ID trzeba sprawdzić)
+    id: 4603408, // Przykładowy: Survivor - Eye of the Tiger (ID trzeba sprawdzić)
     lines: [
       "Risin' up, back on the street",
       "Did my time, took my chances",
@@ -44,7 +44,7 @@ export async function GET() {
   const currentDayIndex = Math.floor(Date.now() / msPerDay);
   
   // Wybór zagadki (modulo zapewnia pętlę)
-  const dailyLyric = LYRICS_PLAYLIST[currentDayIndex % LYRICS_PLAYLIST.length];
+  const dailyLyric = LYRICS_PLAYLIST[(currentDayIndex + 4) % LYRICS_PLAYLIST.length];
 
   console.log(`Wybrano zagadkę ID: ${dailyLyric.id}`);
 

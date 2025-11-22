@@ -23,7 +23,7 @@ export async function GET() {
   
   const msPerDay = 24 * 60 * 60 * 1000;
   const currentDayIndex = Math.floor(Date.now() / msPerDay);
-  const puzzle = FILM_PLAYLIST[currentDayIndex % FILM_PLAYLIST.length];
+  const puzzle = FILM_PLAYLIST[(currentDayIndex + 1) % FILM_PLAYLIST.length];
 
   console.log(`Wybrana zagadka: ${puzzle.title} (Deezer: ${puzzle.deezerId}, TMDB: ${puzzle.tmdbId})`);
 

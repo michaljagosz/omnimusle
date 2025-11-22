@@ -1,14 +1,19 @@
 import { NextResponse } from 'next/server';
 
+// Zestaw "Pewniaków" - te utwory na 100% mają działające preview w Deezerze
 const MASHUP_PLAYLIST = [
-  {
-    trackA: "561836",   
-    // Nirvana - Smells Like Teen Spirit
-    trackB: "1153182282",   
-    // Survivor - Eye of the Tiger
-    trackC: "4603408"
-  }
-  // ... Twoje zestawy ...
+{
+    // Dzień 0: Klasyki Rocka
+    trackA: "1109731",   // Queen - Bohemian Rhapsody
+    trackB: "6569065",   // Nirvana - Smells Like Teen Spirit
+    trackC: "112233"     // Survivor - Eye of the Tiger
+  },
+    {
+    // Dzień 0: Klasyki Rocka
+    trackA: "9997018",   // Queen - Bohemian Rhapsody
+    trackB: "13791930",   // Nirvana - Smells Like Teen Spirit
+    trackC: "576431"     // Survivor - Eye of the Tiger
+  },
 ];
 
 export async function GET() {
@@ -16,46 +21,40 @@ export async function GET() {
   
   const msPerDay = 24 * 60 * 60 * 1000;
   const currentDayIndex = Math.floor(Date.now() / msPerDay);
-  const puzzle = MASHUP_PLAYLIST[(currentDayIndex + 3) % MASHUP_PLAYLIST.length];
+  // Wybieramy zestaw (modulo)
+  const puzzle = MASHUP_PLAYLIST[(currentDayIndex + 2) % MASHUP_PLAYLIST.length];
 
-  console.log(`[MASHUP API] Pobieram utwory: A:${puzzle.trackA}, B:${puzzle.trackB}, C:${puzzle.trackC}`);
+  console.log(`[MASHUP API] Pobieram ID: ${puzzle.trackA}, ${puzzle.trackB}, ${puzzle.trackC}`);
 
-  // Funkcja pomocnicza do pobierania z logowaniem błędów
+  // Funkcja pomocnicza do pobierania
   const fetchTrack = async (id: string, label: string) => {
-    const url = `https://api.deezer.com/track/${id}`;
-    console.log(`[${label}] Fetching: ${url}`);
-    
-    const res = await fetch(url);
-    if (!res.ok) {
-        console.error(`[${label}] HTTP Error: ${res.status}`);
-        return null;
+    try {
+      const res = await fetch(`https://api.deezer.com/track/${id}`);
+      if (!res.ok) return null;
+      
+      const data = await res.json();
+      if (data.error || !data.preview) {
+          console.error(`[${label}] Błąd Deezera dla ID ${id}:`, data.error || "Brak preview");
+          return null;
+      }
+      return data;
+    } catch (e) {
+      console.error(`[${label}] Fetch error:`, e);
+      return null;
     }
-    
-    const data = await res.json();
-    
-    if (data.error) {
-        console.error(`[${label}] Deezer API Error:`, data.error);
-        return null;
-    }
-    
-    if (!data.preview) {
-        console.error(`[${label}] BRAK PREVIEW (MP3)! Utwór: ${data.title}`);
-        return null;
-    }
-
-    console.log(`[${label}] Sukces: ${data.title} (Preview OK)`);
-    return data;
   };
 
   try {
-    // Pobieramy po kolei (żeby widzieć w logach co pada)
-    const trackA = await fetchTrack(puzzle.trackA, "Track A");
-    const trackB = await fetchTrack(puzzle.trackB, "Track B");
-    const trackC = await fetchTrack(puzzle.trackC, "Track C");
+    // Pobieramy równolegle
+    const [trackA, trackB, trackC] = await Promise.all([
+      fetchTrack(puzzle.trackA, "Track A"),
+      fetchTrack(puzzle.trackB, "Track B"),
+      fetchTrack(puzzle.trackC, "Track C")
+    ]);
 
+    // Jeśli którykolwiek nie działa, zwracamy błąd, żeby frontend nie udawał że gra
     if (!trackA || !trackB || !trackC) {
-        console.error("[MASHUP API] Jeden z utworów nie działa. Przerywam.");
-        return NextResponse.json({ error: 'Błąd pobierania utworów' }, { status: 500 });
+        return NextResponse.json({ error: 'Jeden z utworów jest niedostępny w Deezerze' }, { status: 404 });
     }
 
     return NextResponse.json({
@@ -65,7 +64,6 @@ export async function GET() {
     });
 
   } catch (error) {
-    console.error("[MASHUP API] Critical Error:", error);
     return NextResponse.json({ error: 'Błąd serwera' }, { status: 500 });
   }
 }

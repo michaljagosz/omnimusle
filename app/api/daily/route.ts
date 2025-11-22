@@ -16,7 +16,7 @@ export async function GET() {
   const currentDayIndex = Math.floor(Date.now() / msPerDay);
 
   // 1. Wybieramy ID na dziś
-  const deezerId = PLAYLIST_IDS[(currentDayIndex + 2) % PLAYLIST_IDS.length];
+  const deezerId = PLAYLIST_IDS[(currentDayIndex + 4) % PLAYLIST_IDS.length];
 
   try {
     // 2. Pytamy o konkretny utwór po ID

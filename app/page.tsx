@@ -68,9 +68,9 @@ export default function Home() {
       {/* NAGŁÓWEK Z PRZYWRÓCONYM GRADIENTEM */}
       <header className="max-w-2xl mx-auto pt-8 pb-10 text-center">
         <h1 className="text-5xl md:text-6xl font-black tracking-tighter mb-3 bg-gradient-to-r from-green-400 to-blue-500 bg-clip-text text-transparent">
-          MUSIC<span className="text-white">DLE</span>
+          OMNI<span className="text-white">MUSLE</span>
         </h1>
-        <p className="text-zinc-400 font-medium text-lg">Daily music challenges</p>
+        <p className="text-zinc-400 font-medium text-lg">An Ultimate Daily Music Quiz</p>
       </header>
 
       <div className="max-w-md mx-auto grid gap-3">
@@ -105,10 +105,11 @@ export default function Home() {
           colorClass="bg-indigo-600" isPlayed={status.clip} 
         />
 
+
       </div>
 
       <footer className="mt-16 text-center text-zinc-600 text-[10px] max-w-xs mx-auto space-y-4">
-        <p className="font-bold tracking-widest uppercase">&copy; 2025 Musicdle</p>
+        <p className="font-bold tracking-widest uppercase">&copy; 2025 Omnimusle</p>
         <div className="flex flex-col gap-2 items-center justify-center opacity-60">
           <div className="flex gap-3 items-center grayscale hover:grayscale-0 transition-all">
             <span>Deezer API</span>

@@ -1,8 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Howl } from 'howler';
 import Link from 'next/link';
+// UWAGA: Tutaj, podobnie jak w film/clip, musimy dynamicznie ładować Howlera, żeby uniknąć błędów builda
+// Ale w poprzednich krokach użyliśmy types.d.ts, więc import statyczny powinien działać.
+// Jeśli wystąpi błąd "window is not defined", wróć do dynamicznego importu.
+import { Howl } from 'howler'; 
 
 const DURATIONS = [1000, 2000, 4000, 8000, 16000, 30000];
 
@@ -26,52 +29,40 @@ type Guess = {
 };
 
 export default function MashupOfTheDay() {
-  // UI
   const [shake, setShake] = useState(false);
   const [borderColor, setBorderColor] = useState('border-zinc-700');
-
-  // Game State
   const [target, setTarget] = useState<MashupData | null>(null);
   const [round, setRound] = useState(0);
   const [gameStatus, setGameStatus] = useState<'loading' | 'playing' | 'won' | 'lost'>('loading');
   const [guesses, setGuesses] = useState<Guess[]>([]);
   
-  // Status odgadnięcia
   const [solvedA, setSolvedA] = useState(false);
   const [solvedB, setSolvedB] = useState(false);
   const [solvedC, setSolvedC] = useState(false);
 
-  // Audio & Progress
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
-  
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<Track[]>([]);
+
+  // Howler instances
   const soundRefA = useRef<Howl | null>(null);
   const soundRefB = useRef<Howl | null>(null);
   const soundRefC = useRef<Howl | null>(null);
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const requestRef = useRef<number | null>(null);
-  const startTimeRef = useRef<number>(0); // Do płynnego paska
+  const startTimeRef = useRef<number>(0);
+  const roundRef = useRef(round);
 
-  // Search
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Track[]>([]);
+  useEffect(() => { roundRef.current = round; }, [round]);
 
-  // --- INICJALIZACJA ---
-useEffect(() => {
+  // --- INIT ---
+  useEffect(() => {
     const init = async () => {
       try {
         const res = await fetch('/api/daily-mashup');
-        
-        if (!res.ok) {
-            throw new Error(`Błąd serwera: ${res.status}`);
-        }
-
         const data = await res.json();
-        
-        if (data.error) {
-            throw new Error(data.error);
-        }
         
         if (data.trackA && data.trackB && data.trackC) {
           setTarget(data);
@@ -88,32 +79,26 @@ useEffect(() => {
                 setSolvedC(parsed.solvedC);
                 if (parsed.gameStatus === 'won') setBorderColor('border-green-500');
                 
-                // Inicjalizacja audio (ale bez autostartu)
+                // Preload audio (bez autoplay)
                 if (parsed.gameStatus === 'playing') {
                     initAudio(data.trackA.preview, data.trackB.preview, data.trackC.preview);
                 }
                 return;
              }
           }
-setGameStatus('playing');
-          // initAudio wywołujemy dopiero tutaj, jak mamy pewność danych
+          setGameStatus('playing');
           initAudio(data.trackA.preview, data.trackB.preview, data.trackC.preview);
-        } else {
-            throw new Error("Niekompletne dane utworów");
         }
-      } catch (e) { 
-          console.error("Błąd gry:", e);
-          alert("Wystąpił błąd ładowania Mashupu. Sprawdź konsolę (F12) po szczegóły.");
-          setGameStatus('lost'); // Ustawiamy stan inny niż loading, żeby odblokować UI (lub pokazać błąd)
-      }
+      } catch (e) { console.error(e); }
     };
     init();
     return () => { 
-        stopPlayback(); 
+        if(soundRefA.current) soundRefA.current.unload();
+        if(soundRefB.current) soundRefB.current.unload();
+        if(soundRefC.current) soundRefC.current.unload();
     };
   }, []);
 
-  // --- AUTOSAVE ---
   useEffect(() => {
     if (target && gameStatus !== 'loading') {
       localStorage.setItem('mashupGameProgress', JSON.stringify({
@@ -122,16 +107,27 @@ setGameStatus('playing');
     }
   }, [guesses, round, gameStatus, target, solvedA, solvedB, solvedC]);
 
-  // --- AUDIO ---
+  // --- AUDIO SETUP Z PROXY ---
   const initAudio = (srcA: string, srcB: string, srcC: string) => {
     if (soundRefA.current) soundRefA.current.unload();
     if (soundRefB.current) soundRefB.current.unload();
     if (soundRefC.current) soundRefC.current.unload();
 
-    const opts = { html5: true, format: ['mp3'], volume: 0.33 };
-    soundRefA.current = new Howl({ ...opts, src: [srcA] });
-    soundRefB.current = new Howl({ ...opts, src: [srcB] });
-    soundRefC.current = new Howl({ ...opts, src: [srcC] });
+    // Helper do tworzenia linku proxy
+    const getProxyUrl = (url: string) => `/api/audio-proxy?url=${encodeURIComponent(url)}`;
+
+    // KLUCZOWA ZMIANA: html5: false (Web Audio API)
+    // To pozwala na idealny miks i preloading, ale wymaga CORS (dlatego używamy proxy)
+    const commonOptions = { 
+        html5: false, // Ważne!
+        format: ['mp3'], 
+        volume: 0.33,
+        preload: true 
+    };
+
+    soundRefA.current = new Howl({ ...commonOptions, src: [getProxyUrl(srcA)] });
+    soundRefB.current = new Howl({ ...commonOptions, src: [getProxyUrl(srcB)] });
+    soundRefC.current = new Howl({ ...commonOptions, src: [getProxyUrl(srcC)] });
   };
 
   const stopPlayback = () => {
@@ -148,12 +144,11 @@ setGameStatus('playing');
     if (gameStatus === 'won' || gameStatus === 'lost') return;
     if (isPlaying) { stopPlayback(); return; }
 
-    // Startujemy audio
+    // Seek 0 i Play
     soundRefA.current?.seek(0);
     soundRefB.current?.seek(0);
     soundRefC.current?.seek(0);
 
-    // Odpalamy tylko nieodgadnięte
     if (!solvedA) soundRefA.current?.play();
     if (!solvedB) soundRefB.current?.play();
     if (!solvedC) soundRefC.current?.play();
@@ -161,24 +156,19 @@ setGameStatus('playing');
     setIsPlaying(true);
     startTimeRef.current = performance.now();
     
-    // Animacja paska postępu (niezależna od audio, żeby nie szarpało)
     const duration = DURATIONS[round];
-    
     const tick = () => {
         const elapsed = performance.now() - startTimeRef.current;
         const pct = Math.min((elapsed / duration) * 100, 100);
         setProgress(pct);
-
         if (elapsed < duration) {
             requestRef.current = requestAnimationFrame(tick);
         } else {
-            // Koniec czasu
             stopPlayback();
         }
     };
     requestRef.current = requestAnimationFrame(tick);
 
-    // Fade out na koniec (zapasowy timer)
     timerRef.current = setTimeout(() => {
        if (!solvedA) soundRefA.current?.fade(0.33, 0, 200);
        if (!solvedB) soundRefB.current?.fade(0.33, 0, 200);
@@ -186,7 +176,7 @@ setGameStatus('playing');
     }, duration - 200);
   };
 
-  // --- LOGIKA ZGADYWANIA ---
+  // --- LOGIKA ---
   const checkAnswer = (selected: Track) => {
     if (!target) return;
     
@@ -201,9 +191,8 @@ setGameStatus('playing');
         
         setResults([]);
         setQuery('');
-        stopPlayback(); // Zatrzymujemy, żeby gracz mógł nacieszyć się "czystszym" dźwiękiem przy kolejnym odpaleniu
+        stopPlayback(); 
 
-        // Sprawdzenie wygranej
         const doneA = solvedA || isA;
         const doneB = solvedB || isB;
         const doneC = solvedC || isC;
@@ -216,19 +205,11 @@ setGameStatus('playing');
             setTimeout(() => setBorderColor('border-zinc-700'), 500);
         }
     } else {
-        // Błąd
         setBorderColor('border-red-500'); setShake(true);
         setTimeout(() => { setShake(false); setBorderColor('border-zinc-700'); }, 500);
-        
         setGuesses(prev => [...prev, { type: 'mashup', text: `${selected.artist.name} - ${selected.title}` }]);
-        
-        if (round < 5) { 
-            setRound(round + 1); 
-            setQuery(''); 
-            setResults([]); 
-        } else {
-            setGameStatus('lost');
-        }
+        if (round < 5) { setRound(round + 1); setQuery(''); setResults([]); }
+        else setGameStatus('lost');
     }
   };
 
@@ -239,7 +220,6 @@ setGameStatus('playing');
     if (round < 5) setRound(round + 1); else setGameStatus('lost');
   };
 
-  // Wyszukiwarka
   useEffect(() => {
     const delay = setTimeout(async () => {
       if (query.length < 2) { setResults([]); return; }
@@ -256,7 +236,8 @@ setGameStatus('playing');
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 text-white p-4 font-sans relative pb-24">
-      
+      <Link href="/" className="absolute top-4 left-4 w-10 h-10 rounded-full border border-zinc-700 flex items-center justify-center hover:bg-zinc-800 text-zinc-400 transition-colors">←</Link>
+
       <div className={`max-w-md w-full bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden border transition-colors duration-200 relative ${borderColor} ${shake ? 'animate-shake' : ''}`}>
         
         <div className="p-5 text-center border-b border-zinc-800 bg-zinc-900/50">
@@ -265,87 +246,46 @@ setGameStatus('playing');
 
         <div className="p-6 flex flex-col items-center gap-6">
             
-            {/* --- KARTY (Grid 3 kolumny, poprawiony CSS) --- */}
+            {/* SLOTS */}
             <div className="grid grid-cols-3 gap-2 w-full">
-                {[
-                  { solved: solvedA, data: target?.trackA },
-                  { solved: solvedB, data: target?.trackB },
-                  { solved: solvedC, data: target?.trackC }
-                ].map((slot, i) => (
-                    <div key={i} className={`aspect-square rounded-lg border flex flex-col items-center justify-center text-center transition-all overflow-hidden relative
-                        ${slot.solved ? 'bg-green-900/40 border-green-500' : 'bg-zinc-800 border-zinc-700'}
-                    `}>
+                {[{ solved: solvedA, data: target?.trackA }, { solved: solvedB, data: target?.trackB }, { solved: solvedC, data: target?.trackC }].map((slot, i) => (
+                    <div key={i} className={`aspect-square rounded-lg border flex flex-col items-center justify-center text-center transition-all overflow-hidden relative ${slot.solved ? 'bg-green-900/40 border-green-500' : 'bg-zinc-800 border-zinc-700'}`}>
                         {slot.solved && slot.data ? (
                             <>
                                 <img src={slot.data.album.cover_medium} className="absolute inset-0 w-full h-full object-cover opacity-60" />
-                                <div className="relative z-10 p-1 drop-shadow-md">
-                                    <p className="text-[9px] font-bold leading-tight text-white shadow-black">{slot.data.title}</p>
-                                </div>
+                                <div className="relative z-10 p-1 drop-shadow-md"><p className="text-[9px] font-bold leading-tight text-white shadow-black">{slot.data.title}</p></div>
                             </>
-                        ) : (
-                            <span className="text-2xl text-zinc-600 font-bold">?</span>
-                        )}
+                        ) : <span className="text-2xl text-zinc-600 font-bold">?</span>}
                     </div>
                 ))}
             </div>
 
-            {/* --- PLAYER --- */}
+            {/* PLAYER */}
             <div className="relative w-24 h-24 flex items-center justify-center">
-                {/* SVG Progress */}
-                <svg className="absolute inset-0 -rotate-90 w-full h-full">
-                    <circle cx="50%" cy="50%" r="44" className="stroke-zinc-800" strokeWidth="6" fill="none"/>
-                    <circle 
-                        cx="50%" cy="50%" r="44" 
-                        className="stroke-pink-500 transition-all duration-100 ease-linear" 
-                        strokeWidth="6" 
-                        fill="none" 
-                        strokeDasharray={2*Math.PI*44} 
-                        strokeDashoffset={2*Math.PI*44 - (progress/100)*2*Math.PI*44}
-                    />
-                </svg>
-                
-                <button 
-                    onClick={playSnippet} 
-                    disabled={gameStatus==='lost'||gameStatus==='won'} 
-                    className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center hover:bg-zinc-700 text-3xl text-white z-10 transition-colors"
-                >
-                    {isPlaying ? '⏸' : '▶'}
-                </button>
+                <svg className="absolute inset-0 -rotate-90 w-full h-full"><circle cx="50%" cy="50%" r="44" className="stroke-zinc-800" strokeWidth="6" fill="none"/><circle cx="50%" cy="50%" r="44" className="stroke-pink-500 transition-all duration-100 ease-linear" strokeWidth="6" fill="none" strokeDasharray={2*Math.PI*44} strokeDashoffset={2*Math.PI*44 - (progress/100)*2*Math.PI*44}/></svg>
+                <button onClick={playSnippet} disabled={gameStatus==='lost'||gameStatus==='won'} className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center hover:bg-zinc-700 text-3xl text-white z-10 transition-colors">{isPlaying ? '⏸' : '▶'}</button>
             </div>
-            
-            <div className="text-center">
-                <p className="text-xs text-zinc-500 uppercase tracking-widest font-bold mb-1">
-                    {solvedA && solvedB && solvedC ? "COMPLETED" : "LISTEN & IDENTIFY"}
-                </p>
-                <p className="text-[10px] text-zinc-600 font-mono">
-                    {currentDurationText}
-                </p>
-            </div>
+            <p className="text-[10px] text-zinc-600 font-mono text-center">{currentDurationText}</p>
 
-            {/* --- HISTORIA --- */}
+            {/* HISTORIA */}
             <div className="w-full space-y-1 max-h-32 overflow-y-auto">
                 {guesses.map((g, i) => (
                     <div key={i} className="text-xs text-zinc-400 bg-zinc-950 p-2 rounded flex justify-between border-l-2 border-red-500 items-center">
-                        <span className="truncate mr-2">{g.type === 'skip' ? 'SKIP' : g.text}</span>
-                        <span className="text-red-500 font-bold">✕</span>
+                        <span className="truncate mr-2">{g.type === 'skip' ? 'SKIP' : g.text}</span><span className="text-red-500 font-bold">✕</span>
                     </div>
                 ))}
             </div>
 
-            {/* --- INPUT --- */}
+            {/* INPUT */}
             {gameStatus === 'playing' && (
                 <div className="w-full relative">
                     <input type="text" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search for any song..." className="w-full p-3 rounded-lg bg-zinc-800 border border-zinc-700 text-white focus:border-pink-500 outline-none placeholder-zinc-500 transition-colors" />
-                    
                     {results.length > 0 && (
                         <div className="absolute bottom-full mb-2 w-full bg-zinc-800 border border-zinc-700 rounded-lg shadow-2xl max-h-48 overflow-y-auto z-50">
                             {results.map(t => (
                                 <button key={t.id} onClick={() => checkAnswer(t)} className="w-full text-left p-3 hover:bg-zinc-700 border-b border-zinc-700/50 flex gap-3 items-center transition-colors">
                                     <img src={t.artist.picture_small} className="w-8 h-8 rounded bg-zinc-900" />
-                                    <div className="truncate text-xs flex-1">
-                                        <span className="text-white font-bold block truncate">{t.title}</span> 
-                                        <span className="text-zinc-400 truncate">{t.artist.name}</span>
-                                    </div>
+                                    <div className="truncate text-xs flex-1"><span className="text-white font-bold block truncate">{t.title}</span><span className="text-zinc-400 truncate">{t.artist.name}</span></div>
                                 </button>
                             ))}
                         </div>
@@ -354,24 +294,14 @@ setGameStatus('playing');
                 </div>
             )}
 
-            {/* --- END SCREEN --- */}
+            {/* END */}
             {(gameStatus === 'won' || gameStatus === 'lost') && (
                 <div className="text-center w-full animate-fade-in pt-4 border-t border-zinc-800">
                     <h2 className={`text-2xl font-bold mb-4 ${gameStatus === 'won' ? 'text-green-400' : 'text-red-400'}`}>{gameStatus === 'won' ? 'MASHUP MASTER!' : 'GAME OVER'}</h2>
-                    
-                    {/* Lista rozwiązań */}
-                    {target && (
-                        <div className="text-xs text-zinc-400 mb-4 space-y-1">
-                            <p>{target.trackA.artist.name} - {target.trackA.title}</p>
-                            <p>{target.trackB.artist.name} - {target.trackB.title}</p>
-                            <p>{target.trackC.artist.name} - {target.trackC.title}</p>
-                        </div>
-                    )}
-
+                    {target && <div className="text-xs text-zinc-400 mb-4 space-y-1"><p>{target.trackA.artist.name} - {target.trackA.title}</p><p>{target.trackB.artist.name} - {target.trackB.title}</p><p>{target.trackC.artist.name} - {target.trackC.title}</p></div>}
                     <button onClick={() => window.location.reload()} className="px-8 py-3 bg-white text-black font-bold rounded-full text-sm hover:bg-gray-200 transition-colors">SEE YOU TOMORROW</button>
                 </div>
             )}
-
         </div>
       </div>
     </main>

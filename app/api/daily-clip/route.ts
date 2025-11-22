@@ -24,13 +24,18 @@ const CLIP_PLAYLIST = [
   },
   // Dodaj więcej...
 
-    {
+  {
     // Michael Jackson - Thriller
     youtubeId: "zUzd9KyIDrM",
     title: "System Of A Down - B.Y.O.B.",
     timestamps: [3, 47, 58, 150, 219, 139] 
   },
-
+  {
+    // Michael Jackson - Thriller
+    youtubeId: "_ovdm2yX4MA",
+    title: "Avicii - Levels",
+    timestamps: [8, 58, 120, 150, 84, 0] 
+  },
 ];
 
 export async function GET() {

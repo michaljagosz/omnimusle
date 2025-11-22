@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import PixelatedImage from '../components/PixelatedImage';
+import GameWrapper from '../components/GameWrapper';
+import Countdown from '../components/Countdown';
 
 const PIXEL_FACTORS = [60, 40, 25, 15, 8, 1];
 
@@ -10,7 +11,7 @@ type Album = {
   id: number;
   title: string;
   artist: { name: string };
-  cover_xl: string;     // Deezer używa 'cover' dla albumów
+  cover_xl: string;
   cover_medium: string;
 };
 
@@ -75,7 +76,7 @@ export default function AlbumOfTheDay() {
   const checkAnswer = (selected: Album) => {
     if (!targetAlbum) return;
     if (guesses.some(g => g.type === 'album' && g.data?.id === selected.id)) {
-        alert("Już wybierałeś ten album!"); return;
+        alert("Already guessed!"); return;
     }
     if (selected.id === targetAlbum.id) {
       setGameStatus('won');
@@ -103,10 +104,10 @@ export default function AlbumOfTheDay() {
     const usedTurns = guesses.length + (gameStatus === 'won' ? 1 : 0);
     for (let i = usedTurns; i < 6; i++) emojiGrid += "⬜";
 
-    const shareText = `Album of the Day\n${emojiGrid}\n\nZagraj: https://twoja-gra.vercel.app`;
+    const shareText = `Album of the Day\n${emojiGrid}\n\nPlay: https://twoja-gra.vercel.app`;
     navigator.clipboard.writeText(shareText).then(() => {
       setShowToast(true); setTimeout(() => setShowToast(false), 3000);
-    }).catch(() => alert("Błąd kopiowania"));
+    }).catch(() => alert("Copy failed"));
   };
 
   useEffect(() => {
@@ -119,82 +120,74 @@ export default function AlbumOfTheDay() {
     return () => clearTimeout(delayDebounceFn);
   }, [query]);
 
-  const currentBlur = (gameStatus === 'won' || gameStatus === 'lost') ? 0 : PIXEL_FACTORS[round];
-
-  if (gameStatus === 'loading') return <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-white">Ładowanie...</div>;
+  if (gameStatus === 'loading') return <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-white">Loading...</div>;
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 text-white p-4 font-sans relative">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 text-white p-4 font-sans relative pb-24">
       
        <div className={`fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-zinc-800 text-white px-6 py-3 rounded-full shadow-2xl border border-green-500 transition-all duration-500 z-[100] flex items-center gap-3 ${showToast ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'}`}>
-        <span className="text-green-500 text-xl">💿</span><span className="font-bold text-sm">Skopiowano!</span>
+        <span className="text-green-500 text-xl">💿</span><span className="font-bold text-sm">Copied to clipboard!</span>
       </div>
 
-      <div className={`max-w-md w-full bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden border transition-colors duration-200 relative ${borderColor} ${shake ? 'animate-shake' : ''}`}>
-        <div className="p-5 text-center border-b border-zinc-800 bg-zinc-900/50">
-          <h1 className="text-xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-600 tracking-widest uppercase">Album of the Day</h1>
+      <GameWrapper
+        title="Album of the Day"
+        icon="💿"
+        gradientFrom="from-yellow-400"
+        gradientTo="to-orange-600"
+        borderColor={borderColor}
+        shake={shake}
+      >
+        <div className="relative w-64 h-64 rounded-xl overflow-hidden shadow-2xl border border-zinc-700 bg-black">
+            {targetAlbum && (
+                <PixelatedImage
+                    src={targetAlbum.cover_xl}
+                    pixelFactor={(gameStatus === 'won' || gameStatus === 'lost') ? 1 : PIXEL_FACTORS[round]}
+                    className="w-full h-full"
+                />
+            )}
+            <div className="absolute top-2 right-2 bg-black/60 backdrop-blur px-3 py-1 rounded-full text-xs font-bold border border-white/10 pointer-events-none">
+                {gameStatus === 'playing' ? `Round ${round + 1}/6` : 'End'}
+            </div>
         </div>
 
-        <div className="p-6 flex flex-col items-center gap-6">
-            <div className="relative w-64 h-64 rounded-xl overflow-hidden shadow-2xl border border-zinc-700 bg-black">
-                {/* Obliczamy aktualny poziom pikselizacji */}
-                {targetAlbum && (
-                    <PixelatedImage
-                        src={targetAlbum.cover_xl}
-                        // Jeśli koniec gry -> 1 (HD), w przeciwnym razie wg rundy
-                        pixelFactor={
-                           (gameStatus === 'won' || gameStatus === 'lost') 
-                           ? 1 
-                           : PIXEL_FACTORS[round]
-                        }
-                        className="w-full h-full"
-                    />
+        <div className="flex w-full gap-1 h-1.5">
+            {[...Array(6)].map((_, i) => (
+            <div key={i} className={`flex-1 rounded-full transition-colors ${i < round ? 'bg-red-500' : i === round ? 'bg-white' : 'bg-zinc-800'}`} />
+            ))}
+        </div>
+
+        {gameStatus === 'playing' && (
+            <div className="w-full relative">
+                <input type="text" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search for an album..." 
+                    className="w-full p-4 rounded-lg bg-zinc-950 border border-zinc-700 focus:border-orange-500 focus:outline-none text-white placeholder-zinc-500 transition-all"
+                />
+                {results.length > 0 && (
+                    <div className="absolute bottom-full mb-2 w-full bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl max-h-60 overflow-y-auto z-50">
+                        {results.map(album => (
+                            <button key={album.id} onClick={() => checkAnswer(album)} className="w-full text-left p-3 hover:bg-zinc-800 flex items-center gap-3 border-b border-zinc-800 transition-colors">
+                                <img src={album.cover_medium} className="w-10 h-10 rounded" />
+                                <div>
+                                    <div className="font-bold text-sm text-white">{album.title}</div>
+                                    <div className="text-xs text-zinc-400">{album.artist.name}</div>
+                                </div>
+                            </button>
+                        ))}
+                    </div>
                 )}
-                
-                <div className="absolute top-2 right-2 bg-black/60 backdrop-blur px-3 py-1 rounded-full text-xs font-bold border border-white/10 pointer-events-none">
-                    {gameStatus === 'playing' ? `Runda ${round + 1}/6` : 'Koniec'}
-                </div>
+                <button onClick={handleSkip} className="w-full mt-3 py-3 text-xs font-bold tracking-widest text-zinc-500 hover:text-white hover:bg-zinc-800 rounded border border-zinc-800 transition-colors uppercase">SKIP (+ CLARITY)</button>
             </div>
+        )}
 
-            <div className="flex w-full gap-1 h-1.5">
-                {[...Array(6)].map((_, i) => (
-                <div key={i} className={`flex-1 rounded-full transition-colors ${i < round ? 'bg-red-500' : i === round ? 'bg-white' : 'bg-zinc-800'}`} />
-                ))}
+        {gameStatus !== 'playing' && targetAlbum && (
+            <div className="text-center w-full animate-fade-in pt-4 border-t border-zinc-800">
+                <h2 className={`text-2xl font-bold mb-2 ${gameStatus === 'won' ? 'text-green-400' : 'text-red-400'}`}>{gameStatus === 'won' ? 'VICTORY' : 'GAME OVER'}</h2>
+                <p className="text-xl font-bold text-white">{targetAlbum.title}</p>
+                <p className="text-sm text-zinc-400 mb-6">{targetAlbum.artist.name}</p>
+                <button onClick={handleShare} className="w-full py-3 bg-gradient-to-r from-yellow-500 to-orange-600 rounded-lg font-bold text-white hover:scale-105 transition-transform shadow-lg flex items-center justify-center gap-2"><span>📤</span> SHARE RESULT</button>
+                <Countdown />
             </div>
-
-            {gameStatus === 'playing' && (
-                <div className="w-full relative">
-                    <input type="text" value={query} onChange={e => setQuery(e.target.value)} placeholder="Jaki to album?" 
-                        className="w-full p-4 rounded-lg bg-zinc-950 border border-zinc-700 focus:border-orange-500 focus:outline-none text-white placeholder-zinc-500"
-                    />
-                    {results.length > 0 && (
-                        <div className="absolute bottom-full mb-2 w-full bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl max-h-60 overflow-y-auto z-50">
-                            {results.map(album => (
-                                <button key={album.id} onClick={() => checkAnswer(album)} className="w-full text-left p-3 hover:bg-zinc-700 flex items-center gap-3 border-b border-zinc-700/50">
-                                    <img src={album.cover_medium} className="w-10 h-10 rounded" />
-                                    <div>
-                                        <div className="font-bold text-sm">{album.title}</div>
-                                        <div className="text-xs text-zinc-500">{album.artist.name}</div>
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                    <button onClick={handleSkip} className="w-full mt-3 py-3 text-xs font-bold tracking-widest text-zinc-500 hover:text-white hover:bg-zinc-800 rounded border border-zinc-800 transition-colors uppercase">Pomiń</button>
-                </div>
-            )}
-
-            {gameStatus !== 'playing' && targetAlbum && (
-                <div className="text-center w-full animate-fade-in">
-                    <h2 className={`text-2xl font-bold mb-2 ${gameStatus === 'won' ? 'text-green-400' : 'text-red-400'}`}>{gameStatus === 'won' ? 'ZGADŁEŚ!' : 'PORAŻKA'}</h2>
-                    <p className="text-xl font-bold">{targetAlbum.title}</p>
-                    <p className="text-sm text-zinc-400">{targetAlbum.artist.name}</p>
-                    <button onClick={handleShare} className="mt-6 w-full py-3 bg-gradient-to-r from-yellow-500 to-orange-600 rounded-lg font-bold text-white hover:scale-105 transition-transform shadow-lg flex items-center justify-center gap-2"><span>📤</span> UDOSTĘPNIJ</button>
-                    <button onClick={() => window.location.reload()} className="mt-4 px-6 py-2 text-sm text-zinc-400 hover:text-white hover:underline">Zagraj ponownie</button>
-                </div>
-            )}
-        </div>
-      </div>
+        )}
+      </GameWrapper>
     </main>
   );
 }
