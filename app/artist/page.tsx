@@ -159,6 +159,37 @@ export default function ArtistOfTheDay() {
             ))}
         </div>
 
+        {/* HISTORY */}
+        {guesses.length > 0 && (
+          <div className="w-full flex flex-col gap-2 animate-fade-in">
+            {guesses.map((g, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-3 p-2 rounded bg-zinc-950 border-l-4 border-red-500"
+              >
+                {g.type === 'artist' && g.data ? (
+                  <>
+                    <img
+                      src={g.data.picture_medium}
+                      className="w-8 h-8 rounded opacity-50 grayscale"
+                    />
+                    <div className="flex-1 min-w-0 opacity-80">
+                      <div className="text-sm truncate text-zinc-400 line-through">
+                        {g.data.name}
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-red-500">✕</span>
+                  </>
+                ) : (
+                  <div className="w-full text-center text-xs font-bold text-zinc-600 uppercase tracking-wider">
+                    — SKIP —
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         {gameStatus === 'playing' && (
             <div className="w-full relative">
                 <input type="text" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search for an artist..." 

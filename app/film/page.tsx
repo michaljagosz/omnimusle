@@ -42,31 +42,44 @@ export default function FilmOfTheDay() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<FilmResult[]>([]);
   
-  const soundRef = useRef<Howl | null>(null);
+    const soundRef = useRef<Howl | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const requestRef = useRef<number | null>(null);
-  // WAŻNE: Refy do śledzenia czasu i rundy wewnątrz pętli animacji
   const roundRef = useRef(round);
-  const startTimeRef = useRef<number>(0);
 
-  useEffect(() => { roundRef.current = round; }, [round]);
-
-  // --- DYNAMICZNE WYDŁUŻANIE CZASU (AUDIO) ---
   useEffect(() => {
-    if (isPlaying && soundRef.current) {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      const currentSeek = soundRef.current.seek() as number;
-      const remainingMs = DURATIONS[round] - (currentSeek * 1000);
-      
+    roundRef.current = round;
+  }, [round]);
+
+  // --- LIMIT CZASU FRAGMENTU ---
+  useEffect(() => {
+    if (!soundRef.current) return;
+
+    if (isPlaying) {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+
+      // Obliczamy czas, który JESZCZE powinien grać fragment
+      const currentSeek = soundRef.current.seek() as number; // sekundy
+      const remainingMs = Math.max(0, DURATIONS[round] - currentSeek * 1000);
+
       timerRef.current = setTimeout(() => {
         soundRef.current?.fade(0.5, 0, 200);
-        setTimeout(() => { 
-            stopPlayback(); 
-            soundRef.current?.volume(0.5); 
+        setTimeout(() => {
+          soundRef.current?.stop();
+          soundRef.current?.volume(0.5);
+          stopPlayback();
         }, 200);
-      }, Math.max(0, remainingMs));
+      }, remainingMs);
+    } else {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
     }
-  }, [round]); // Reaguje na zmianę rundy (Skip)
+  }, [isPlaying, round]);
 
   // --- INICJALIZACJA ---
   useEffect(() => {
@@ -110,58 +123,70 @@ export default function FilmOfTheDay() {
   const initAudio = (src: string) => {
     if (soundRef.current) soundRef.current.unload();
     soundRef.current = new Howl({
-      src: [src], html5: true, format: ['mp3'], volume: 0.5,
-      onend: stopPlayback,
-      onstop: stopPlayback
+      src: [src],
+      html5: true,
+      format: ['mp3'],
+      volume: 0.5,
+      onplay: () => {
+        const updateProgress = () => {
+          if (soundRef.current && soundRef.current.playing()) {
+            const seek = soundRef.current.seek() as number;
+            const duration = DURATIONS[roundRef.current] / 1000;
+            setProgress(Math.min((seek / duration) * 100, 100));
+            requestRef.current = requestAnimationFrame(updateProgress);
+          }
+        };
+        requestRef.current = requestAnimationFrame(updateProgress);
+      },
     });
   };
 
   const stopPlayback = () => {
     setIsPlaying(false);
+    if (requestRef.current) {
+      cancelAnimationFrame(requestRef.current);
+      requestRef.current = null;
+    }
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
     setProgress(0);
-    if (requestRef.current) cancelAnimationFrame(requestRef.current);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    soundRef.current?.stop();
   };
 
   const playSnippet = () => {
     if (gameStatus === 'won' || gameStatus === 'lost') return;
-    
-    // Jeśli nie ma audio (np. błąd ładowania), spróbuj załadować ponownie
-    if (!soundRef.current && target) initAudio(target.audioPreview);
 
-    if (isPlaying) {
-        stopPlayback();
-        return;
+    // Jeśli audio nie jest jeszcze zainicjalizowane – zrób to teraz
+    if (!soundRef.current && target) {
+      initAudio(target.audioPreview);
     }
 
-    setIsPlaying(true);
-    soundRef.current?.seek(0);
-    soundRef.current?.volume(0.5);
-    soundRef.current?.play();
+    if (!soundRef.current) return;
 
-    // Zapisujemy czas startu
-    startTimeRef.current = performance.now();
-
-    const tick = () => {
-      // Obliczamy czas na podstawie zegara systemowego (płynniej niż pytać audio)
-      const elapsed = performance.now() - startTimeRef.current;
-      
-      // KLUCZOWA POPRAWKA: Pobieramy duration z Refa, a nie ze zmiennej lokalnej!
-      // Dzięki temu po Skipie pasek "wie", że ma więcej czasu.
-      const currentRoundDuration = DURATIONS[roundRef.current];
-      
-      const pct = Math.min((elapsed / currentRoundDuration) * 100, 100);
-      setProgress(pct);
-
-      if (elapsed < currentRoundDuration) {
-        requestRef.current = requestAnimationFrame(tick);
-      } else {
-        // Koniec czasu (zapasowy stop, główny jest w timerze)
-        stopPlayback();
+    // Toggle: jeśli już gra, zatrzymaj (PAUSE behavior as in Song of the Day)
+    if (isPlaying) {
+      // Pauza: zatrzymujemy audio i pętlę animacji,
+      // ale NIE zerujemy progress – tak jak w Song of the Day.
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
       }
-    };
-    requestRef.current = requestAnimationFrame(tick);
+      if (requestRef.current) {
+        cancelAnimationFrame(requestRef.current);
+        requestRef.current = null;
+      }
+      soundRef.current.stop();
+      setIsPlaying(false);
+      return;
+    }
+
+    // Start nowego fragmentu
+    setProgress(0);
+    soundRef.current.seek(0);
+    soundRef.current.volume(0.5);
+    setIsPlaying(true);
+    soundRef.current.play();
   };
 
   // --- LOGIKA GRY ---

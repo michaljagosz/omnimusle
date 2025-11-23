@@ -18,6 +18,7 @@ type Album = {
 type Guess = {
   type: 'album' | 'skip';
   data?: Album;
+  accuracy?: 'full' | 'artist' | 'none';
 };
 
 export default function AlbumOfTheDay() {
@@ -73,22 +74,44 @@ export default function AlbumOfTheDay() {
     }
   };
 
-  const checkAnswer = (selected: Album) => {
-    if (!targetAlbum) return;
-    if (guesses.some(g => g.type === 'album' && g.data?.id === selected.id)) {
-        alert("Already guessed!"); return;
-    }
-    if (selected.id === targetAlbum.id) {
-      setGameStatus('won');
-      triggerFeedback('success');
+ const checkAnswer = (selected: Album) => {
+  if (!targetAlbum) return;
+
+  // nie zgaduj tego samego albumu kilka razy
+  if (guesses.some(g => g.type === 'album' && g.data?.id === selected.id)) {
+    alert("Already guessed!");
+    return;
+  }
+
+  const isCorrectAlbum = selected.id === targetAlbum.id;
+  const isCorrectArtist =
+    selected.artist.name.toLowerCase() === targetAlbum.artist.name.toLowerCase();
+
+  if (isCorrectAlbum) {
+    // pełne trafienie – wygrana
+    setGameStatus('won');
+    triggerFeedback('success');
+    setResults([]);
+    // nie dodajemy tu wpisu do guesses – wygrana jest pokazana niżej
+  } else {
+    // częściowo / całkowicie błędna odpowiedź
+    const accuracy: 'artist' | 'none' = isCorrectArtist ? 'artist' : 'none';
+
+    triggerFeedback('error');
+    setGuesses(prev => [
+      ...prev,
+      { type: 'album', data: selected, accuracy }
+    ]);
+
+    if (round < 5) {
+      setRound(round + 1);
+      setQuery('');
       setResults([]);
     } else {
-      triggerFeedback('error');
-      setGuesses(prev => [...prev, { type: 'album', data: selected }]);
-      if (round < 5) { setRound(round + 1); setQuery(''); setResults([]); } 
-      else { setGameStatus('lost'); }
+      setGameStatus('lost');
     }
-  };
+  }
+};
 
   const handleSkip = () => {
     triggerFeedback('error');
@@ -97,18 +120,32 @@ export default function AlbumOfTheDay() {
     else setGameStatus('lost');
   };
 
-  const handleShare = () => {
-    let emojiGrid = "";
-    guesses.forEach(g => emojiGrid += (g.type === 'skip' ? "⬛" : "🟥"));
-    if (gameStatus === 'won') emojiGrid += "🟩";
-    const usedTurns = guesses.length + (gameStatus === 'won' ? 1 : 0);
-    for (let i = usedTurns; i < 6; i++) emojiGrid += "⬜";
+const handleShare = () => {
+  let emojiGrid = "";
 
-    const shareText = `Album of the Day\n${emojiGrid}\n\nPlay: https://twoja-gra.vercel.app`;
-    navigator.clipboard.writeText(shareText).then(() => {
-      setShowToast(true); setTimeout(() => setShowToast(false), 3000);
-    }).catch(() => alert("Copy failed"));
-  };
+  guesses.forEach(g => {
+    if (g.type === 'skip') {
+      emojiGrid += "⬛";          // pominięta runda
+    } else if (g.accuracy === 'artist') {
+      emojiGrid += "🟨";          // artysta trafiony, album zły
+    } else {
+      emojiGrid += "🟥";          // wszystko źle (albo stare wpisy bez accuracy)
+    }
+  });
+
+  if (gameStatus === 'won') {
+    emojiGrid += "🟩";            // ostateczne trafienie
+  }
+
+  const usedTurns = guesses.length + (gameStatus === 'won' ? 1 : 0);
+  for (let i = usedTurns; i < 6; i++) emojiGrid += "⬜";
+
+  const shareText = `Album of the Day\n${emojiGrid}\n\nPlay: https://twoja-gra.vercel.app`;
+  navigator.clipboard.writeText(shareText).then(() => {
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  }).catch(() => alert("Copy failed"));
+};
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
@@ -155,6 +192,64 @@ export default function AlbumOfTheDay() {
             <div key={i} className={`flex-1 rounded-full transition-colors ${i < round ? 'bg-red-500' : i === round ? 'bg-white' : 'bg-zinc-800'}`} />
             ))}
         </div>
+
+        {/* HISTORY */}
+        {guesses.length > 0 && (
+          <div className="w-full flex flex-col gap-2 animate-fade-in">
+            {guesses.map((g, i) => {
+              if (g.type === 'skip') {
+                return (
+                  <div
+                    key={i}
+                    className="flex items-center justify-center p-2 rounded bg-zinc-950 border-l-4 border-zinc-700"
+                  >
+                    <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                      — SKIP —
+                    </span>
+                  </div>
+                );
+              }
+
+              const accuracy = g.accuracy ?? 'none';
+
+              return (
+                <div
+                  key={i}
+                  className={
+                    "flex items-center gap-3 p-2 rounded bg-zinc-950 border-l-4 " +
+                    (accuracy === 'artist'
+                      ? "border-yellow-400"
+                      : "border-red-500")
+                  }
+                >
+                  {g.data && (
+                    <>
+                      <img
+                        src={g.data.cover_medium}
+                        className="w-8 h-8 rounded opacity-70"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm truncate text-white">
+                          {g.data.title}
+                        </div>
+                        <div className="text-xs text-zinc-400 truncate">
+                          {g.data.artist.name}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  <span className="text-xs font-bold">
+                    {accuracy === 'artist' ? (
+                      <span className="text-yellow-400">ARTIST ✓</span>
+                    ) : (
+                      <span className="text-red-500">✕</span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {gameStatus === 'playing' && (
             <div className="w-full relative">
