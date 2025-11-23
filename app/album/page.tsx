@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import PixelatedImage from '../components/PixelatedImage';
 import GameWrapper from '../components/GameWrapper';
 import Countdown from '../components/Countdown';
+import { useDailyGamePersistence, GameStatus } from '../hooks/useDailyGames';
 
 const PIXEL_FACTORS = [60, 40, 25, 15, 8, 1];
 
@@ -24,13 +25,37 @@ type Guess = {
 export default function AlbumOfTheDay() {
   const [targetAlbum, setTargetAlbum] = useState<Album | null>(null);
   const [round, setRound] = useState(0);
-  const [gameStatus, setGameStatus] = useState<'loading' | 'playing' | 'won' | 'lost'>('loading');
+  const [gameStatus, setGameStatus] = useState<GameStatus>('loading');
   const [guesses, setGuesses] = useState<Guess[]>([]);
   const [shake, setShake] = useState(false);
   const [borderColor, setBorderColor] = useState('border-zinc-700');
   const [showToast, setShowToast] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Album[]>([]);
+
+  useDailyGamePersistence<Album, Guess>({
+    storageKey: 'albumGameProgress',
+    target: targetAlbum,
+    getTargetId: (album) => album.id,
+    gameStatus,
+    round,
+    guesses,
+    onRestore: (saved) => {
+      setGuesses(saved.guesses);
+      setRound(saved.round);
+      setGameStatus(saved.gameStatus);
+
+      if (saved.gameStatus === 'won') {
+        setBorderColor('border-green-500');
+      }
+    },
+    onNoSavedState: () => {
+      if (!targetAlbum) return;
+      if (gameStatus === 'loading') {
+        setGameStatus('playing');
+      }
+    },
+  });
 
   useEffect(() => {
     const fetchDaily = async () => {
@@ -39,31 +64,15 @@ export default function AlbumOfTheDay() {
         const album = await res.json();
         if (album && album.id) {
           setTargetAlbum(album);
-          const savedData = localStorage.getItem('albumGameProgress');
-          if (savedData) {
-             const parsed = JSON.parse(savedData);
-             if (parsed.albumId === album.id) {
-                setGuesses(parsed.guesses);
-                setRound(parsed.round);
-                setGameStatus(parsed.gameStatus);
-                if (parsed.gameStatus === 'won') setBorderColor('border-green-500');
-                return;
-             }
-          }
-          setGameStatus('playing');
+          // reszta logiki (przywracanie stanu / start nowej gry) jest obsługiwana
+          // przez useDailyGamePersistence
         }
-      } catch (error) { console.error(error); }
+      } catch (error) {
+        console.error(error);
+      }
     };
     fetchDaily();
   }, []);
-
-  useEffect(() => {
-    if (targetAlbum && gameStatus !== 'loading') {
-      localStorage.setItem('albumGameProgress', JSON.stringify({
-        albumId: targetAlbum.id, guesses, round, gameStatus
-      }));
-    }
-  }, [guesses, round, gameStatus, targetAlbum]);
 
   const triggerFeedback = (type: 'error' | 'success') => {
     if (type === 'success') setBorderColor('border-green-500');

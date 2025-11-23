@@ -2,17 +2,17 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Howl } from 'howler';
-// Importujemy nasze nowe klocki!
 import GameWrapper from '../components/GameWrapper';
 import CircularPlayer from '../components/CircularPlayer';
 import Countdown from '../components/Countdown';
+import { useDailyGamePersistence, GameStatus } from '../hooks/useDailyGames';
 
 const DURATIONS = [500, 1000, 4000, 8000, 16000, 30000];
 
 type Song = {
   id: number;
   title: string;
-  artist: { name: string; picture_small: string; };
+  artist: { name: string; picture_small: string };
   preview: string;
 };
 
@@ -22,47 +22,29 @@ type Guess = {
   isClose?: boolean;
 };
 
-type SavedGameState = {
-  songId: number;
-  guesses: Guess[];
-  round: number;
-  gameStatus: 'loading' | 'playing' | 'won' | 'lost';
-};
-
-export default function SongOfTheDay() {
+function useSongGameState() {
   const [targetSong, setTargetSong] = useState<Song | null>(null);
   const [round, setRound] = useState(0);
+  const [gameStatus, setGameStatus] = useState<GameStatus>('loading');
+  const [guesses, setGuesses] = useState<Guess[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [gameStatus, setGameStatus] = useState<'loading' | 'playing' | 'won' | 'lost'>('loading');
-  const [shake, setShake] = useState(false); 
+  const [shake, setShake] = useState(false);
   const [borderColor, setBorderColor] = useState('border-zinc-700');
   const [showToast, setShowToast] = useState(false);
-  const [guesses, setGuesses] = useState<Guess[]>([]);
   const [progress, setProgress] = useState(0);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Song[]>([]);
-  
+
   const soundRef = useRef<Howl | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const requestRef = useRef<number | null>(null);
-  const roundRef = useRef(round); 
+  const roundRef = useRef(round);
 
-  useEffect(() => { roundRef.current = round; }, [round]);
-
-  // --- DYNAMICZNE WYDŁUŻANIE ---
   useEffect(() => {
-    if (isPlaying && soundRef.current) {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      const currentSeek = soundRef.current.seek() as number;
-      const remainingMs = DURATIONS[round] - (currentSeek * 1000);
-      timerRef.current = setTimeout(() => {
-        soundRef.current?.fade(0.5, 0, 200);
-        setTimeout(() => { soundRef.current?.stop(); soundRef.current?.volume(0.5); }, 200);
-      }, Math.max(0, remainingMs));
-    }
+    roundRef.current = round;
   }, [round]);
 
-  // --- INIT & AUTOSAVE ---
+  // --- POBRANIE DZIENNEJ PIOSENKI (bez localStorage) ---
   useEffect(() => {
     const initGame = async () => {
       try {
@@ -70,53 +52,57 @@ export default function SongOfTheDay() {
         const song = await res.json();
         if (song && song.id) {
           setTargetSong(song);
-          const savedData = localStorage.getItem('musicGameProgress');
-          if (savedData) {
-            const parsed: SavedGameState = JSON.parse(savedData);
-            if (parsed.songId === song.id) {
-              setGuesses(parsed.guesses);
-              setRound(parsed.round);
-              setGameStatus(parsed.gameStatus);
-              if (parsed.gameStatus === 'won') setBorderColor('border-green-500');
-              if (parsed.gameStatus === 'playing') initializeAudio(song.preview);
-              return;
-            }
-          }
-          setGameStatus('playing');
-          initializeAudio(song.preview);
+          // nie ustawiamy jeszcze gameStatus – dajemy szansę hookowi persistence na przywrócenie stanu
         }
-      } catch (error) { console.error("Błąd API:", error); }
+      } catch (error) {
+        console.error('Błąd API:', error);
+      }
     };
     initGame();
-    return () => { if (soundRef.current) soundRef.current.unload(); };
+
+    return () => {
+      if (soundRef.current) soundRef.current.unload();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // --- AUDIO: DYNAMICZNE WYDŁUŻANIE ---
   useEffect(() => {
-    if (targetSong && gameStatus !== 'loading') {
-      const stateToSave: SavedGameState = {
-        songId: targetSong.id, guesses, round, gameStatus
-      };
-      localStorage.setItem('musicGameProgress', JSON.stringify(stateToSave));
+    if (isPlaying && soundRef.current) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      const currentSeek = soundRef.current.seek() as number;
+      const remainingMs = DURATIONS[round] - currentSeek * 1000;
+      timerRef.current = setTimeout(() => {
+        soundRef.current?.fade(0.5, 0, 200);
+        setTimeout(() => {
+          soundRef.current?.stop();
+          soundRef.current?.volume(0.5);
+        }, 200);
+      }, Math.max(0, remainingMs));
     }
-  }, [guesses, round, gameStatus, targetSong]);
+  }, [round, isPlaying]);
 
-  // --- AUDIO ---
+  // --- AUDIO INIT ---
   const initializeAudio = (src: string) => {
     if (soundRef.current) soundRef.current.unload();
     soundRef.current = new Howl({
-      src: [src], html5: true, format: ['mp3'], volume: 0.5,
-      onend: stopPlayback, onstop: stopPlayback,
+      src: [src],
+      html5: true,
+      format: ['mp3'],
+      volume: 0.5,
+      onend: stopPlayback,
+      onstop: stopPlayback,
       onplay: () => {
         const updateProgress = () => {
           if (soundRef.current && soundRef.current.playing()) {
             const seek = soundRef.current.seek() as number;
-            const duration = DURATIONS[roundRef.current] / 1000; 
+            const duration = DURATIONS[roundRef.current] / 1000;
             setProgress(Math.min((seek / duration) * 100, 100));
             requestRef.current = requestAnimationFrame(updateProgress);
           }
         };
         requestRef.current = requestAnimationFrame(updateProgress);
-      }
+      },
     });
   };
 
@@ -126,97 +112,225 @@ export default function SongOfTheDay() {
   };
 
   const playSnippet = () => {
-    if (gameStatus === 'won' || gameStatus === 'lost') return; 
+    if (gameStatus === 'won' || gameStatus === 'lost') return;
     if (!soundRef.current && targetSong) initializeAudio(targetSong.preview);
-    
+
     if (isPlaying) {
       soundRef.current?.stop();
       if (timerRef.current) clearTimeout(timerRef.current);
       stopPlayback();
       return;
     }
-    setIsPlaying(true); setProgress(0);
-    soundRef.current?.seek(0); soundRef.current?.volume(0.5); soundRef.current?.play();
+
+    setIsPlaying(true);
+    setProgress(0);
+    soundRef.current?.seek(0);
+    soundRef.current?.volume(0.5);
+    soundRef.current?.play();
     timerRef.current = setTimeout(() => {
       soundRef.current?.fade(0.5, 0, 200);
-      setTimeout(() => { soundRef.current?.stop(); soundRef.current?.volume(0.5); }, 200);
+      setTimeout(() => {
+        soundRef.current?.stop();
+        soundRef.current?.volume(0.5);
+      }, 200);
     }, DURATIONS[round]);
   };
 
-  // --- LOGIKA ---
+useDailyGamePersistence<Song, Guess>({
+  storageKey: 'musicGameProgress',
+  target: targetSong,
+  getTargetId: (song) => song.id,
+  gameStatus,
+  round,
+  guesses,
+  onRestore: (saved) => {
+    setGuesses(saved.guesses);
+    setRound(saved.round);
+    setGameStatus(saved.gameStatus);
+
+    if (saved.gameStatus === 'won') {
+      setBorderColor('border-green-500');
+    }
+
+    // jeśli gra była w trakcie, przygotuj audio
+    if (saved.gameStatus === 'playing' && targetSong) {
+      initializeAudio(targetSong.preview);
+    }
+  },
+  onNoSavedState: () => {
+    if (!targetSong) return;
+    // brak zapisu → nowa gra
+    if (gameStatus === 'loading') {
+      setGameStatus('playing');
+      initializeAudio(targetSong.preview);
+    }
+  },
+});
+
+  // --- FEEDBACK ---
   const triggerFeedback = (type: 'error' | 'close' | 'success') => {
-    if (type === 'success') setBorderColor('border-green-500');
-    else if (type === 'close') {
-        setBorderColor('border-yellow-500'); setShake(true);
-        setTimeout(() => { setShake(false); setBorderColor('border-zinc-700'); }, 500);
+    if (type === 'success') {
+      setBorderColor('border-green-500');
+    } else if (type === 'close') {
+      setBorderColor('border-yellow-500');
+      setShake(true);
+      setTimeout(() => {
+        setShake(false);
+        setBorderColor('border-zinc-700');
+      }, 500);
     } else {
-        setBorderColor('border-red-500'); setShake(true);
-        setTimeout(() => { setShake(false); setBorderColor('border-zinc-700'); }, 500);
+      setBorderColor('border-red-500');
+      setShake(true);
+      setTimeout(() => {
+        setShake(false);
+        setBorderColor('border-zinc-700');
+      }, 500);
     }
   };
 
+  // --- LOGIKA ZGADYWANIA ---
   const checkAnswer = (selectedSong: Song) => {
     if (!targetSong) return;
-    if (guesses.some(g => g.type === 'song' && g.data?.id === selectedSong.id)) {
-        alert("Już było!"); return;
+    if (guesses.some((g) => g.type === 'song' && g.data?.id === selectedSong.id)) {
+      alert('Już było!');
+      return;
     }
-    const isMatch = selectedSong.id === targetSong.id || selectedSong.title.toLowerCase() === targetSong.title.toLowerCase();
+
+    const isMatch =
+      selectedSong.id === targetSong.id ||
+      selectedSong.title.toLowerCase() === targetSong.title.toLowerCase();
 
     if (isMatch) {
-      setGameStatus('won'); setResults([]); triggerFeedback('success');
+      setGameStatus('won');
+      setResults([]);
+      triggerFeedback('success');
     } else {
-      const isArtistMatch = selectedSong.artist.name.toLowerCase() === targetSong.artist.name.toLowerCase();
+      const isArtistMatch =
+        selectedSong.artist.name.toLowerCase() === targetSong.artist.name.toLowerCase();
       triggerFeedback(isArtistMatch ? 'close' : 'error');
-      setGuesses(prev => [...prev, { type: 'song', data: selectedSong, isClose: isArtistMatch }]);
-      if (round < 5) { setRound(round + 1); setQuery(''); setResults([]); }
-      else setGameStatus('lost');
+      setGuesses((prev) => [
+        ...prev,
+        { type: 'song', data: selectedSong, isClose: isArtistMatch },
+      ]);
+      if (round < 5) {
+        setRound(round + 1);
+        setQuery('');
+        setResults([]);
+      } else {
+        setGameStatus('lost');
+      }
     }
   };
 
   const handleSkip = () => {
     triggerFeedback('error');
-    setGuesses(prev => [...prev, { type: 'skip', isClose: false }]);
-    if (round < 5) setRound(round + 1); else setGameStatus('lost');
+    setGuesses((prev) => [...prev, { type: 'skip', isClose: false }]);
+    if (round < 5) setRound(round + 1);
+    else setGameStatus('lost');
   };
 
   const handleShare = () => {
-    let emojiGrid = "";
+    let emojiGrid = '';
     guesses.forEach((g) => {
-      if (g.type === 'skip') emojiGrid += "⬛";
-      else if (g.isClose) emojiGrid += "🟨";
-      else emojiGrid += "🟥";
+      if (g.type === 'skip') emojiGrid += '⬛';
+      else if (g.isClose) emojiGrid += '🟨';
+      else emojiGrid += '🟥';
     });
-    if (gameStatus === 'won') emojiGrid += "🟩";
+    if (gameStatus === 'won') emojiGrid += '🟩';
     const usedTurns = guesses.length + (gameStatus === 'won' ? 1 : 0);
-    for (let i = usedTurns; i < 6; i++) emojiGrid += "⬜";
+    for (let i = usedTurns; i < 6; i++) emojiGrid += '⬜';
 
     const shareText = `Song of the Day\n${emojiGrid}\n\nZagraj: https://twoja-gra.vercel.app`;
-    navigator.clipboard.writeText(shareText).then(() => { setShowToast(true); setTimeout(() => setShowToast(false), 3000); });
+    navigator.clipboard.writeText(shareText).then(() => {
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    });
   };
 
+  // --- WYSZUKIWANIE ---
   useEffect(() => {
     const delay = setTimeout(async () => {
-      if (query.length < 2) { setResults([]); return; }
-      const res = await fetch(`/api/search?q=${query}`);
-      const d = await res.json();
-      setResults(d.data || []);
+      if (query.length < 2) {
+        setResults([]);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/search?q=${query}`);
+        const d = await res.json();
+        setResults(d.data || []);
+      } catch (error) {
+        console.error(error);
+      }
     }, 400);
     return () => clearTimeout(delay);
   }, [query]);
 
   const currentDurationText = (DURATIONS[round] / 1000).toString() + 's';
-  
-  if (gameStatus === 'loading') return <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-white">Loading...</div>;
+
+  return {
+    targetSong,
+    round,
+    isPlaying,
+    gameStatus,
+    shake,
+    borderColor,
+    showToast,
+    guesses,
+    progress,
+    query,
+    results,
+    currentDurationText,
+    setQuery,
+    handleSkip,
+    checkAnswer,
+    handleShare,
+    playSnippet,
+  };
+}
+
+export default function SongOfTheDay() {
+  const {
+    targetSong,
+    round,
+    isPlaying,
+    gameStatus,
+    shake,
+    borderColor,
+    showToast,
+    guesses,
+    progress,
+    query,
+    results,
+    currentDurationText,
+    setQuery,
+    handleSkip,
+    checkAnswer,
+    handleShare,
+    playSnippet,
+  } = useSongGameState();
+
+  if (gameStatus === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-white">
+        Loading...
+      </div>
+    );
+  }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 text-white p-4 font-sans relative pb-24">
-      
       {/* Toast */}
-      <div className={`fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-zinc-800 text-white px-6 py-3 rounded-full shadow-2xl border border-green-500 transition-all duration-500 z-[100] flex items-center gap-3 ${showToast ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'}`}>
-        <span className="text-green-500 text-xl">🎵</span><span className="font-bold text-sm">Copied to clipboard!</span>
+      <div
+        className={`fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-zinc-800 text-white px-6 py-3 rounded-full shadow-2xl border border-green-500 transition-all duration-500 z-[100] flex items-center gap-3 ${
+          showToast
+            ? 'opacity-100 translate-y-0'
+            : 'opacity-0 translate-y-10 pointer-events-none'
+        }`}
+      >
+        <span className="text-green-500 text-xl">🎵</span>
+        <span className="font-bold text-sm">Copied to clipboard!</span>
       </div>
 
-      {/* NOWY WRAPPER */}
       <GameWrapper
         title="Song of the Day"
         gradientFrom="from-green-400"
@@ -224,92 +338,138 @@ export default function SongOfTheDay() {
         borderColor={borderColor}
         shake={shake}
       >
-          
-          {/* NOWY PLAYER KOMPONENTOWY */}
-          <div className="flex flex-col items-center gap-2">
-            <CircularPlayer 
-                isPlaying={isPlaying}
-                progress={progress}
-                onToggle={playSnippet} // Tutaj wstaw swoją funkcję playSnippet
-                disabled={gameStatus === 'won' || gameStatus === 'lost'}
-                colorClass="stroke-green-500"
+        {/* PLAYER */}
+        <div className="flex flex-col items-center gap-2">
+          <CircularPlayer
+            isPlaying={isPlaying}
+            progress={progress}
+            onToggle={playSnippet}
+            disabled={gameStatus === 'won' || gameStatus === 'lost'}
+            colorClass="stroke-green-500"
+          />
+          <div className="text-zinc-500 font-mono text-xs bg-zinc-950 px-3 py-1 rounded-full border border-zinc-800">
+            {isPlaying ? 'Playing...' : `Length: ${currentDurationText}`}
+          </div>
+        </div>
+
+        {/* PASKI RUND */}
+        <div className="flex w-full gap-1 h-1.5">
+          {[...Array(6)].map((_, i) => (
+            <div
+              key={i}
+              className={`flex-1 rounded-full transition-colors ${
+                i < round ? 'bg-red-500' : i === round ? 'bg-white' : 'bg-zinc-800'
+              }`}
             />
-            <div className="text-zinc-500 font-mono text-xs bg-zinc-950 px-3 py-1 rounded-full border border-zinc-800">
-                {isPlaying ? 'Playing...' : `Length: ${currentDurationText}`}
-            </div>
-          </div>
+          ))}
+        </div>
 
-          {/* PASKI RUND */}
-          <div className="flex w-full gap-1 h-1.5">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className={`flex-1 rounded-full transition-colors ${i < round ? 'bg-red-500' : i === round ? 'bg-white' : 'bg-zinc-800'}`} />
-            ))}
-          </div>
-
-          {/* HISTORIA */}
-          <div className="w-full flex flex-col gap-2 animate-fade-in">
-               {guesses.map((g, i) => {
-                 const borderClass = g.isClose ? 'border-yellow-500' : 'border-red-500';
-                 const titleClass = g.isClose ? 'text-zinc-300' : 'text-zinc-400 line-through';
-                 const icon = g.isClose ? '⚠️' : '✕';
-                 return (
-                 <div key={i} className={`flex items-center gap-3 p-2 rounded bg-zinc-950 border-l-4 ${borderClass}`}>
-                    {g.type === 'song' && g.data ? (
-                      <>
-                        <img src={g.data.artist.picture_small} className={`w-8 h-8 rounded ${!g.isClose && 'opacity-50 grayscale'}`} />
-                        <div className="flex-1 min-w-0 opacity-80">
-                          <div className={`text-sm truncate ${titleClass}`}>{g.data.title}</div>
-                          <div className={`text-xs text-zinc-500`}>{g.data.artist.name}</div>
-                        </div>
-                        <span className={`text-xs font-bold ${g.isClose ? 'text-yellow-500' : 'text-red-500'}`}>{icon}</span>
-                      </>
-                    ) : (
-                      <div className="w-full text-center text-xs font-bold text-zinc-600 uppercase tracking-wider">— SKIP —</div>
-                    )}
-                 </div>
-               )})}
-          </div>
-
-          {/* GAMEPLAY INPUT */}
-          {gameStatus === 'playing' && (
-            <div className="w-full relative">
-              <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search for a song..." 
-                className="w-full p-4 rounded-lg bg-zinc-950 border border-zinc-700 focus:border-green-500 focus:outline-none text-white placeholder-zinc-500 transition-all"
-              />
-              {results.length > 0 && (
-                <div className="absolute bottom-full mb-2 w-full bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl max-h-60 overflow-y-auto z-50">
-                  {results.map((song) => (
-                    <button key={song.id} onClick={() => checkAnswer(song)} className="w-full text-left p-3 hover:bg-zinc-800 flex items-center gap-3 border-b border-zinc-800 transition-colors">
-                      <img src={song.artist.picture_small} className="w-10 h-10 rounded" />
-                      <div className="overflow-hidden">
-                        <div className="font-bold text-sm text-white truncate">{song.title}</div>
-                        <div className="text-xs text-zinc-400 truncate">{song.artist.name}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button onClick={handleSkip} className="w-full mt-3 py-3 text-xs font-bold tracking-widest text-zinc-500 hover:text-white hover:bg-zinc-800 rounded border border-zinc-800 transition-colors uppercase">SKIP (+ TIME)</button>
-            </div>
-          )}
-
-          {/* END SCREEN */}
-{/* END SCREEN */}
-          {gameStatus !== 'playing' && targetSong && (
-            <div className="text-center w-full animate-fade-in pt-4 border-t border-zinc-800">
-              <h2 className={`text-2xl font-bold mb-2 ${gameStatus === 'won' ? 'text-green-400' : 'text-red-400'}`}>{gameStatus === 'won' ? 'VICTORY' : 'GAME OVER'}</h2>
-              <div className="flex flex-col items-center gap-4 mb-6">
-                <img src={targetSong.artist.picture_small} className="w-24 h-24 rounded-lg shadow-lg" />
-                <div><p className="text-xl font-bold">{targetSong.title}</p><p className="text-zinc-400">{targetSong.artist.name}</p></div>
+        {/* HISTORIA */}
+        <div className="w-full flex flex-col gap-2 animate-fade-in">
+          {guesses.map((g, i) => {
+            const borderClass = g.isClose ? 'border-yellow-500' : 'border-red-500';
+            const titleClass = g.isClose ? 'text-zinc-300' : 'text-zinc-400 line-through';
+            const icon = g.isClose ? '⚠️' : '✕';
+            return (
+              <div
+                key={i}
+                className={`flex items-center gap-3 p-2 rounded bg-zinc-950 border-l-4 ${borderClass}`}
+              >
+                {g.type === 'song' && g.data ? (
+                  <>
+                    <img
+                      src={g.data.artist.picture_small}
+                      className={`w-8 h-8 rounded ${!g.isClose && 'opacity-50 grayscale'}`}
+                    />
+                    <div className="flex-1 min-w-0 opacity-80">
+                      <div className={`text-sm truncate ${titleClass}`}>{g.data.title}</div>
+                      <div className="text-xs text-zinc-500">{g.data.artist.name}</div>
+                    </div>
+                    <span
+                      className={`text-xs font-bold ${
+                        g.isClose ? 'text-yellow-500' : 'text-red-500'
+                      }`}
+                    >
+                      {icon}
+                    </span>
+                  </>
+                ) : (
+                  <div className="w-full text-center text-xs font-bold text-zinc-600 uppercase tracking-wider">
+                    — SKIP —
+                  </div>
+                )}
               </div>
-              
-              <button onClick={handleShare} className="w-full py-3 bg-gradient-to-r from-green-500 to-blue-600 rounded-lg font-bold text-white hover:scale-105 transition-transform shadow-lg flex items-center justify-center gap-2"><span>📤</span> SHARE RESULT</button>
-              
-              {/* ZMIANA TUTAJ: Zamiast tekstu statycznego, mamy licznik */}
-              <Countdown />
-            </div>
-          )}
+            );
+          })}
+        </div>
 
+        {/* GAMEPLAY INPUT */}
+        {gameStatus === 'playing' && (
+          <div className="w-full relative">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search for a song..."
+              className="w-full p-4 rounded-lg bg-zinc-950 border border-zinc-700 focus:border-green-500 focus:outline-none text-white placeholder-zinc-500 transition-all"
+            />
+            {results.length > 0 && (
+              <div className="absolute bottom-full mb-2 w-full bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl max-h-60 overflow-y-auto z-50">
+                {results.map((song) => (
+                  <button
+                    key={song.id}
+                    onClick={() => checkAnswer(song)}
+                    className="w-full text-left p-3 hover:bg-zinc-800 flex items-center gap-3 border-b border-zinc-800 transition-colors"
+                  >
+                    <img src={song.artist.picture_small} className="w-10 h-10 rounded" />
+                    <div className="overflow-hidden">
+                      <div className="font-bold text-sm text-white truncate">{song.title}</div>
+                      <div className="text-xs text-zinc-400 truncate">{song.artist.name}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={handleSkip}
+              className="w-full mt-3 py-3 text-xs font-bold tracking-widest text-zinc-500 hover:text-white hover:bg-zinc-800 rounded border border-zinc-800 transition-colors uppercase"
+            >
+              SKIP (+ TIME)
+            </button>
+          </div>
+        )}
+
+        {/* END SCREEN */}
+        {gameStatus !== 'playing' && targetSong && (
+          <div className="text-center w-full animate-fade-in pt-4 border-t border-zinc-800">
+            <h2
+              className={`text-2xl font-bold mb-2 ${
+                gameStatus === 'won' ? 'text-green-400' : 'text-red-400'
+              }`}
+            >
+              {gameStatus === 'won' ? 'VICTORY' : 'GAME OVER'}
+            </h2>
+            <div className="flex flex-col items-center gap-4 mb-6">
+              <img
+                src={targetSong.artist.picture_small}
+                className="w-24 h-24 rounded-lg shadow-lg"
+              />
+              <div>
+                <p className="text-xl font-bold">{targetSong.title}</p>
+                <p className="text-zinc-400">{targetSong.artist.name}</p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleShare}
+              className="w-full py-3 bg-gradient-to-r from-green-500 to-blue-600 rounded-lg font-bold text-white hover:scale-105 transition-transform shadow-lg flex items-center justify-center gap-2"
+            >
+              <span>📤</span> SHARE RESULT
+            </button>
+
+            <Countdown />
+          </div>
+        )}
       </GameWrapper>
     </main>
   );

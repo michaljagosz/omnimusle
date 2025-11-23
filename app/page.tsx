@@ -70,13 +70,13 @@ export default function Home() {
         <h1 className="text-5xl md:text-6xl font-black tracking-tighter mb-3 bg-gradient-to-r from-green-400 to-blue-500 bg-clip-text text-transparent">
           OMNI<span className="text-white">MUSLE</span>
         </h1>
-        <p className="text-zinc-400 font-medium text-lg">An Ultimate Daily Music Quiz</p>
+        <p className="text-zinc-400 font-medium text-lg">Ultimate Daily Music Quiz</p>
       </header>
 
       <div className="max-w-md mx-auto grid gap-3">
         
         <GameCard 
-          href="/song" title="Song of the Day" subtitle="Guess the intro" icon="🎵" 
+          href="/song" title="Song of the Day" subtitle="Guess the tune" icon="🎵" 
           colorClass="bg-blue-600" isPlayed={status.song} 
         />
         

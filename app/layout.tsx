@@ -3,7 +3,7 @@ import "./globals.css";
 import BottomNav from "./components/BottomNav"; // Importujemy nasz pasek
 
 export const metadata: Metadata = {
-  title: "Musicdle - Daily Music Games",
+  title: "Omnimusle - Ultimate Daily Music Quiz",
   description: "Guess the song, artist and more!",
   manifest: "/manifest.json", // To przyda się później do PWA
   themeColor: "#09090b",

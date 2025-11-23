@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import PixelatedImage from '../components/PixelatedImage';
 import GameWrapper from '../components/GameWrapper';
 import Countdown from '../components/Countdown';
+import { useDailyGamePersistence, GameStatus } from '../hooks/useDailyGames';
 
 const PIXEL_FACTORS = [60, 40, 25, 15, 8, 1];
 
@@ -19,16 +20,16 @@ type Guess = {
   data?: Artist;
 };
 
-export default function ArtistOfTheDay() {
-  const [targetArtist, setTargetArtist] = useState<Artist | null>(null);
-  const [round, setRound] = useState(0);
-  const [gameStatus, setGameStatus] = useState<'loading' | 'playing' | 'won' | 'lost'>('loading');
-  const [guesses, setGuesses] = useState<Guess[]>([]);
-  const [shake, setShake] = useState(false);
-  const [borderColor, setBorderColor] = useState('border-zinc-700');
-  const [showToast, setShowToast] = useState(false);
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Artist[]>([]);
+function useArtistGameState() {
+const [targetArtist, setTargetArtist] = useState<Artist | null>(null);
+const [round, setRound] = useState(0);
+const [gameStatus, setGameStatus] = useState<GameStatus>('loading');
+const [guesses, setGuesses] = useState<Guess[]>([]);
+const [shake, setShake] = useState(false);
+const [borderColor, setBorderColor] = useState('border-zinc-700');
+const [showToast, setShowToast] = useState(false);
+const [query, setQuery] = useState('');
+const [results, setResults] = useState<Artist[]>([]);
 
   useEffect(() => {
     const fetchDailyArtist = async () => {
@@ -37,31 +38,14 @@ export default function ArtistOfTheDay() {
         const artist = await res.json();
         if (artist && artist.id) {
           setTargetArtist(artist);
-          const savedData = localStorage.getItem('artistGameProgress');
-          if (savedData) {
-             const parsed = JSON.parse(savedData);
-             if (parsed.artistId === artist.id) {
-                setGuesses(parsed.guesses);
-                setRound(parsed.round);
-                setGameStatus(parsed.gameStatus);
-                if (parsed.gameStatus === 'won') setBorderColor('border-green-500');
-                return;
-             }
-          }
-          setGameStatus('playing');
+          // Nie ustawiamy tutaj gameStatus – damy szansę hookowi persistence
         }
-      } catch (error) { console.error("Błąd:", error); }
+      } catch (error) {
+        console.error('Błąd:', error);
+      }
     };
     fetchDailyArtist();
   }, []);
-
-  useEffect(() => {
-    if (targetArtist && gameStatus !== 'loading') {
-      localStorage.setItem('artistGameProgress', JSON.stringify({
-        artistId: targetArtist.id, guesses, round, gameStatus
-      }));
-    }
-  }, [guesses, round, gameStatus, targetArtist]);
 
   const triggerFeedback = (type: 'error' | 'success') => {
     if (type === 'success') {
@@ -111,6 +95,30 @@ export default function ArtistOfTheDay() {
     }).catch(err => { alert("Copy failed."); });
   };
 
+useDailyGamePersistence<Artist, Guess>({
+  storageKey: 'artistGameProgress',
+  target: targetArtist,
+  getTargetId: (artist) => artist.id,
+  gameStatus,
+  round,
+  guesses,
+  onRestore: (saved) => {
+    setGuesses(saved.guesses);
+    setRound(saved.round);
+    setGameStatus(saved.gameStatus);
+
+    if (saved.gameStatus === 'won') {
+      setBorderColor('border-green-500');
+    }
+  },
+  onNoSavedState: () => {
+    if (!targetArtist) return;
+    if (gameStatus === 'loading') {
+      setGameStatus('playing');
+    }
+  },
+});
+
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
       if (query.length < 2) { setResults([]); return; }
@@ -123,7 +131,47 @@ export default function ArtistOfTheDay() {
     return () => clearTimeout(delayDebounceFn);
   }, [query]);
 
-  if (gameStatus === 'loading') return <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-white">Loading...</div>;
+  return {
+    targetArtist,
+    round,
+    gameStatus,
+    guesses,
+    shake,
+    borderColor,
+    showToast,
+    query,
+    results,
+    setQuery,
+    checkAnswer,
+    handleSkip,
+    handleShare,
+  };
+}
+
+export default function ArtistOfTheDay() {
+  const {
+    targetArtist,
+    round,
+    gameStatus,
+    guesses,
+    shake,
+    borderColor,
+    showToast,
+    query,
+    results,
+    setQuery,
+    checkAnswer,
+    handleSkip,
+    handleShare,
+  } = useArtistGameState();
+
+  if (gameStatus === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-white">
+        Loading...
+      </div>
+    );
+  }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 text-white p-4 font-sans relative pb-24">

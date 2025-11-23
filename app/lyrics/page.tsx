@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import GameWrapper from '../components/GameWrapper';
 import Link from 'next/link';
 import Countdown from '../components/Countdown';
+import { useDailyGamePersistence, GameStatus } from '../hooks/useDailyGames';
 
 type LyricGameData = {
   id: number;
@@ -28,13 +29,37 @@ type Guess = {
 export default function LyricsOfTheDay() {
   const [target, setTarget] = useState<LyricGameData | null>(null);
   const [round, setRound] = useState(0);
-  const [gameStatus, setGameStatus] = useState<'loading' | 'playing' | 'won' | 'lost'>('loading');
+  const [gameStatus, setGameStatus] = useState<GameStatus>('loading');
   const [guesses, setGuesses] = useState<Guess[]>([]);
   const [shake, setShake] = useState(false);
   const [borderColor, setBorderColor] = useState('border-zinc-700');
   const [showToast, setShowToast] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SongResult[]>([]);
+
+  useDailyGamePersistence<LyricGameData, Guess>({
+    storageKey: 'lyricsGameProgress',
+    target,
+    getTargetId: (t) => t.id,
+    gameStatus,
+    round,
+    guesses,
+    onRestore: (saved) => {
+      setGuesses(saved.guesses);
+      setRound(saved.round);
+      setGameStatus(saved.gameStatus);
+
+      if (saved.gameStatus === 'won') {
+        setBorderColor('border-green-500');
+      }
+    },
+    onNoSavedState: () => {
+      if (!target) return;
+      if (gameStatus === 'loading') {
+        setGameStatus('playing');
+      }
+    },
+  });
 
   useEffect(() => {
     const init = async () => {
@@ -44,31 +69,14 @@ export default function LyricsOfTheDay() {
         const data = await res.json();
         if (data && data.id && data.lines) {
           setTarget(data);
-          const saved = localStorage.getItem('lyricsGameProgress');
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            if (parsed.id === data.id) {
-               setGuesses(parsed.guesses);
-               setRound(parsed.round);
-               setGameStatus(parsed.gameStatus);
-               if (parsed.gameStatus === 'won') setBorderColor('border-green-500');
-               return;
-            }
-          }
-          setGameStatus('playing');
+          // Przywracanie stanu / start nowej gry obsługuje useDailyGamePersistence
         }
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+      }
     };
     init();
   }, []);
-
-  useEffect(() => {
-    if (target && gameStatus !== 'loading') {
-      localStorage.setItem('lyricsGameProgress', JSON.stringify({
-        id: target.id, guesses, round, gameStatus
-      }));
-    }
-  }, [guesses, round, gameStatus, target]);
 
   const triggerFeedback = (type: 'error' | 'close' | 'success') => {
     if (type === 'success') setBorderColor('border-green-500');

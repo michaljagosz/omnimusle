@@ -5,6 +5,7 @@ import { Howl } from 'howler';
 import GameWrapper from '../components/GameWrapper';
 import CircularPlayer from '../components/CircularPlayer';
 import Countdown from '../components/Countdown';
+import { useDailyGamePersistence, GameStatus } from '../hooks/useDailyGames';
 
 const DURATIONS = [500, 1000, 4000, 8000, 16000, 30000];
 
@@ -35,14 +36,44 @@ export default function FilmOfTheDay() {
   const [showToast, setShowToast] = useState(false);
   const [target, setTarget] = useState<DailyFilmPuzzle | null>(null);
   const [round, setRound] = useState(0);
-  const [gameStatus, setGameStatus] = useState<'loading' | 'playing' | 'won' | 'lost'>('loading');
+  const [gameStatus, setGameStatus] = useState<GameStatus>('loading');
   const [guesses, setGuesses] = useState<Guess[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<FilmResult[]>([]);
-  
-    const soundRef = useRef<Howl | null>(null);
+
+  useDailyGamePersistence<DailyFilmPuzzle, Guess>({
+    storageKey: 'filmGameProgress',
+    target,
+    getTargetId: (film) => film.tmdbId,
+    gameStatus,
+    round,
+    guesses,
+    onRestore: (saved) => {
+      setGuesses(saved.guesses);
+      setRound(saved.round);
+      setGameStatus(saved.gameStatus);
+
+      if (saved.gameStatus === 'won') {
+        setBorderColor('border-green-500');
+      }
+
+      // jeśli gra była w trakcie, przygotuj audio
+      if (saved.gameStatus === 'playing' && target) {
+        initAudio(target.audioPreview);
+      }
+    },
+    onNoSavedState: () => {
+      if (!target) return;
+      if (gameStatus === 'loading') {
+        setGameStatus('playing');
+        initAudio(target.audioPreview);
+      }
+    },
+  });
+
+  const soundRef = useRef<Howl | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const requestRef = useRef<number | null>(null);
   const roundRef = useRef(round);
@@ -89,35 +120,17 @@ export default function FilmOfTheDay() {
         const data = await res.json();
         if (data && data.tmdbId) {
           setTarget(data);
-          const saved = localStorage.getItem('filmGameProgress');
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            if (parsed.id === data.tmdbId) {
-               setGuesses(parsed.guesses);
-               setRound(parsed.round);
-               setGameStatus(parsed.gameStatus);
-               if (parsed.gameStatus === 'won') setBorderColor('border-green-500');
-               if (parsed.gameStatus === 'playing') initAudio(data.audioPreview);
-               return;
-            }
-          }
-          setGameStatus('playing');
-          initAudio(data.audioPreview);
+          // Przywracanie stanu / start nowej gry obsługuje useDailyGamePersistence
         }
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+      }
     };
     init();
-    return () => { if(soundRef.current) soundRef.current.unload(); };
+    return () => {
+      if (soundRef.current) soundRef.current.unload();
+    };
   }, []);
-
-  // --- AUTOSAVE ---
-  useEffect(() => {
-    if (target && gameStatus !== 'loading') {
-      localStorage.setItem('filmGameProgress', JSON.stringify({
-        id: target.tmdbId, guesses, round, gameStatus
-      }));
-    }
-  }, [guesses, round, gameStatus, target]);
 
   // --- AUDIO LOGIC ---
   const initAudio = (src: string) => {

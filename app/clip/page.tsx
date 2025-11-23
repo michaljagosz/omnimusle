@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import GameWrapper from '../components/GameWrapper';
 import type { YouTubePlayer } from 'react-youtube'; 
 import Countdown from '../components/Countdown';
+import { useDailyGamePersistence, GameStatus } from '../hooks/useDailyGames';
 
 const YouTube = dynamic(() => import('react-youtube'), { ssr: false });
 
@@ -23,7 +24,7 @@ type Guess = {
 export default function ClipOfTheDay() {
   const [target, setTarget] = useState<ClipData | null>(null);
   const [round, setRound] = useState(0);
-  const [gameStatus, setGameStatus] = useState<'loading' | 'playing' | 'won' | 'lost'>('loading');
+  const [gameStatus, setGameStatus] = useState<GameStatus>('loading');
   const [guesses, setGuesses] = useState<Guess[]>([]);
   const [shake, setShake] = useState(false);
   const [borderColor, setBorderColor] = useState('border-zinc-700');
@@ -33,6 +34,30 @@ export default function ClipOfTheDay() {
   const [results, setResults] = useState<any[]>([]);
   const playerRef = useRef<YouTubePlayer | null>(null);
 
+  useDailyGamePersistence<ClipData, Guess>({
+    storageKey: 'clipGameProgress',
+    target,
+    getTargetId: (t) => t.youtubeId,
+    gameStatus,
+    round,
+    guesses,
+    onRestore: (saved) => {
+      setGuesses(saved.guesses);
+      setRound(saved.round);
+      setGameStatus(saved.gameStatus);
+
+      if (saved.gameStatus === 'won') {
+        setBorderColor('border-green-500');
+      }
+    },
+    onNoSavedState: () => {
+      if (!target) return;
+      if (gameStatus === 'loading') {
+        setGameStatus('playing');
+      }
+    },
+  });
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -40,31 +65,15 @@ export default function ClipOfTheDay() {
         const data = await res.json();
         if (data && data.youtubeId) {
           setTarget(data);
-          const saved = localStorage.getItem('clipGameProgress');
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            if (parsed.id === data.youtubeId) {
-               setGuesses(parsed.guesses);
-               setRound(parsed.round);
-               setGameStatus(parsed.gameStatus);
-               if (parsed.gameStatus === 'won') setBorderColor('border-green-500');
-               return;
-            }
-          }
-          setGameStatus('playing');
+          // Przywracanie stanu / start nowej gry obsługuje useDailyGamePersistence
         }
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+      }
     };
     init();
   }, []);
 
-  useEffect(() => {
-    if (target && gameStatus !== 'loading') {
-      localStorage.setItem('clipGameProgress', JSON.stringify({
-        id: target.youtubeId, guesses, round, gameStatus
-      }));
-    }
-  }, [guesses, round, gameStatus, target]);
 
   useEffect(() => {
     if (!target || !playerRef.current || !isPlayerReady) return;
@@ -171,7 +180,7 @@ export default function ClipOfTheDay() {
             <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden border border-zinc-700 shadow-2xl">
                 {target && (
                     <div className="w-full h-full relative pointer-events-none select-none overflow-hidden">
-                        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[300%] h-[300%] opacity-80">
+                        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[200%] h-[200%] opacity-80">
                              <YouTube videoId={target.youtubeId} opts={opts} onReady={onPlayerReady} className="w-full h-full" />
                         </div>
                         <div className="absolute inset-0 bg-[url('https://raw.githubusercontent.com/zootella/crt-css/master/scanline.png')] opacity-20 pointer-events-none"></div>
